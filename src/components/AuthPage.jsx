@@ -11,6 +11,7 @@ export default function AuthPage({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [accountType, setAccountType] = useState('user');
+  const [loginError, setLoginError] = useState('');
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] flex">
@@ -40,14 +41,18 @@ export default function AuthPage({ onLogin }) {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <Sparkles size={14} className="text-white" />
             </div>
-            <span className="text-sm font-bold text-white">Promo Insight</span>
+            <span className="text-sm font-bold text-white">LivePulse</span>
           </div>
 
           <h2 className="text-xl font-bold text-white mb-1">{isLogin ? '로그인' : '회원가입'}</h2>
           <p className="text-sm text-slate-500 mb-6">{isLogin ? '계정에 로그인하세요' : '새 계정을 만들어보세요'}</p>
 
           {/* Google SSO */}
-          <button className="w-full py-2.5 rounded-lg border border-[#374766]/50 text-sm text-slate-300 hover:bg-[#1a2035] transition-colors flex items-center justify-center gap-2 mb-4">
+          <button
+            disabled
+            className="w-full py-2.5 rounded-lg border border-[#374766]/50 text-sm text-slate-300 transition-colors flex items-center justify-center gap-2 mb-4 opacity-50 cursor-not-allowed"
+            title="준비 중"
+          >
             <Globe size={16} />
             Google로 계속하기
           </button>
@@ -87,14 +92,14 @@ export default function AuthPage({ onLogin }) {
               <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">이메일</label>
               <div className="relative">
                 <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type="email" placeholder="name@company.com" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                <input type="email" placeholder="name@company.com" value={email} onChange={e => { setEmail(e.target.value); setLoginError(''); }} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
               </div>
             </div>
             <div>
               <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 block">비밀번호</label>
               <div className="relative">
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input type={showPw ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-10 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                <input type={showPw ? 'text' : 'password'} placeholder="••••••••" value={password} onChange={e => { setPassword(e.target.value); setLoginError(''); }} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-10 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
                 <button onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
@@ -141,7 +146,33 @@ export default function AuthPage({ onLogin }) {
             </div>
           )}
 
-          <button onClick={() => onLogin(accountType)} className="w-full mt-4 py-2.5 rounded-lg text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all">
+          {loginError && (
+            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-3">{loginError}</p>
+          )}
+          <button onClick={() => {
+            if (!email.trim() || !password.trim()) {
+              setLoginError('이메일과 비밀번호를 입력해주세요.');
+              return;
+            }
+            if (!/\S+@\S+\.\S+/.test(email)) {
+              setLoginError('올바른 이메일 형식을 입력해주세요.');
+              return;
+            }
+            const normalizedEmail = email.trim().toLowerCase();
+            if (normalizedEmail === 'kangeun1@naver.com') {
+              if (password !== 'livedpulse2026') {
+                setLoginError('비밀번호가 올바르지 않습니다.');
+                return;
+              }
+              onLogin('admin');
+            } else {
+              if (password.length < 6) {
+                setLoginError('비밀번호는 6자 이상이어야 합니다.');
+                return;
+              }
+              onLogin(accountType);
+            }
+          }} className="w-full mt-4 py-2.5 rounded-lg text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all">
             {isLogin ? '로그인' : '회원가입'}
           </button>
 

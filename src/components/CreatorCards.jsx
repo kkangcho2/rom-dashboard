@@ -44,7 +44,17 @@ export default function CreatorCardsTab({ filtered, selectedCreator, setSelected
                       <span className="text-[10px] text-slate-500">{(c.subscribers ?? 0).toLocaleString()} 구독자</span>
                     </div>
                   </div>
-                  <GradeTag grade={c.adGrade} />
+                  <div className="flex items-center gap-1">
+                    {c.tier && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                        c.tier === 'S' ? 'bg-amber-500/20 text-amber-400' :
+                        c.tier === 'A' ? 'bg-purple-500/20 text-purple-400' :
+                        c.tier === 'B' ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-slate-500/20 text-slate-400'
+                      }`}>{c.tier}</span>
+                    )}
+                    <GradeTag grade={c.adGrade} />
+                  </div>
                 </div>
 
                 {/* Tags */}

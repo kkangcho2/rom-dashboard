@@ -91,6 +91,75 @@ async function crawlVideoInfo(url, onProgress) {
     }
   }
 
+  // Extract liveStreamingDetails from page source
+  let actualStartTime = null, actualEndTime = null, concurrentViewers = null, isLive = false;
+
+  // 1) liveStreamingDetails 직접 파싱
+  const startMatch = html.match(/"actualStartTime":"([^"]+)"/);
+  if (startMatch) actualStartTime = startMatch[1];
+  const endMatch = html.match(/"actualEndTime":"([^"]+)"/);
+  if (endMatch) actualEndTime = endMatch[1];
+  const concurrentMatch = html.match(/"concurrentViewers":"(\d+)"/);
+  if (concurrentMatch) concurrentViewers = parseInt(concurrentMatch[1]);
+
+  // 2) isLive / isLiveContent 감지
+  const isLiveMatch = html.match(/"isLive"\s*:\s*(true|false)/);
+  if (isLiveMatch) isLive = isLiveMatch[1] === 'true';
+  const isLiveContent = /"isLiveContent"\s*:\s*true/.test(html);
+
+  // 3) 시청자 수 추가 패턴들 (종료된 라이브 방송 포함)
+  if (!concurrentViewers) {
+    // "viewCount":{"videoViewCountRenderer":{"viewCount":{"simpleText":"조회수 839회"},"isLive":true}}
+    // 라이브 종료 후에도 "최대 동시 시청자" 텍스트가 있을 수 있음
+    const peakMatch = html.match(/최대\s*(?:동시\s*)?시청자[^\d]*(\d[\d,]*)/);
+    if (peakMatch) concurrentViewers = parseInt(peakMatch[1].replace(/,/g, ''));
+  }
+  if (!concurrentViewers) {
+    // "watching now" / "명이 시청 중" 패턴
+    const watchingMatch = html.match(/([\d,]+)\s*(?:명이?\s*시청|watching)/i);
+    if (watchingMatch) concurrentViewers = parseInt(watchingMatch[1].replace(/,/g, ''));
+  }
+  if (!concurrentViewers) {
+    // ytInitialData 내 viewCountText에서 "N명이 시청 중" 파싱
+    const viewTextMatch = html.match(/"viewCountText":\{[^}]*?"simpleText":"([\d,]+)\s*명/);
+    if (viewTextMatch) {
+      const parsed = parseInt(viewTextMatch[1].replace(/,/g, ''));
+      // 이 값이 조회수보다 작으면 동시 시청자로 간주
+      if (parsed < viewCount * 0.5) concurrentViewers = parsed;
+    }
+  }
+
+  // Extract duration from page source (먼저 추출 - 아래에서 사용)
+  let duration = '';
+  let durationSeconds = 0;
+  const durationMatch = html.match(/"lengthSeconds":"(\d+)"/);
+  if (durationMatch) {
+    durationSeconds = parseInt(durationMatch[1]);
+    const h = Math.floor(durationSeconds / 3600);
+    const m = Math.floor((durationSeconds % 3600) / 60);
+    const s = durationSeconds % 60;
+    duration = h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  // Extract publishedAt (먼저 추출 - 아래에서 사용)
+  let publishedAt = null;
+  const publishMatch = html.match(/"publishDate":"([^"]+)"/);
+  if (publishMatch) publishedAt = publishMatch[1];
+
+  // 4) 라이브 방송이면 publishedAt → 시작 시간, duration → 종료 시간 추정
+  if (isLiveContent || isLive || durationSeconds > 3600) {
+    if (!actualStartTime && publishedAt) {
+      actualStartTime = publishedAt;
+    }
+    if (!actualEndTime && actualStartTime && durationSeconds > 0) {
+      const startDate = new Date(actualStartTime);
+      if (!isNaN(startDate.getTime())) {
+        const endDate = new Date(startDate.getTime() + durationSeconds * 1000);
+        actualEndTime = endDate.toISOString();
+      }
+    }
+  }
+
   onProgress?.(50, '자막(스크립트) 수집 중...');
 
   // Fetch transcript/subtitles
@@ -160,6 +229,14 @@ async function crawlVideoInfo(url, onProgress) {
     viewCount,
     likeCount,
     description,
+    duration,
+    durationSeconds,
+    publishedAt,
+    actualStartTime,
+    actualEndTime,
+    concurrentViewers,
+    isLive,
+    isLiveContent,
     transcript,
     comments,
     commentCount: comments.length,

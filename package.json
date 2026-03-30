@@ -8,6 +8,7 @@
     "server": "node server/index.cjs",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
     "build": "vite build",
+    "deploy": "vite build && wrangler pages deploy dist --project-name livepulse",
     "lint": "eslint .",
     "preview": "vite preview"
   },

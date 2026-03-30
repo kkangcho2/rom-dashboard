@@ -50,6 +50,60 @@ export async function searchYouTubeVideos(query, max = 20) {
   return res.json();
 }
 
+export async function getFeaturedCreators() {
+  const res = await fetch(`${API_BASE}/featured-creators`);
+  if (!res.ok) throw new Error('Featured creators fetch failed');
+  return res.json();
+}
+
+export async function getVideoAnalysis(videoId) {
+  const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/analysis`);
+  if (!res.ok) throw new Error('Video analysis fetch failed');
+  return res.json();
+}
+
+export async function getChannelDetail(channelId) {
+  const res = await fetch(`${API_BASE}/channels/${encodeURIComponent(channelId)}/detail`);
+  if (!res.ok) throw new Error('Channel detail fetch failed');
+  return res.json();
+}
+
+export async function getChannelStats(channelId) {
+  const res = await fetch(`${API_BASE}/channels/${encodeURIComponent(channelId)}/stats`);
+  if (!res.ok) throw new Error('Channel stats fetch failed');
+  return res.json();
+}
+
+export async function getVideoSentiment(videoId) {
+  const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/sentiment`);
+  if (!res.ok) throw new Error('Sentiment analysis failed');
+  return res.json();
+}
+
+export async function getVideoComments(videoId) {
+  const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/comments`);
+  if (!res.ok) throw new Error('Comments fetch failed');
+  return res.json();
+}
+
+// Video info (liveStreamingDetails 포함)
+export async function getVideoInfo(url) {
+  const res = await fetch(`${API_BASE}/video-info?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error('Video info fetch failed');
+  return res.json();
+}
+
+// yt-dlp based transcript/chat fetch (데일리 리포트용)
+export async function fetchYtTranscript(url) {
+  const res = await fetch(`${API_BASE}/yt/transcript?url=${encodeURIComponent(url)}`);
+  return res.json();
+}
+
+export async function fetchYtChat(url) {
+  const res = await fetch(`${API_BASE}/yt/chat?url=${encodeURIComponent(url)}`);
+  return res.json();
+}
+
 // Poll for crawl completion
 export function pollCrawlStatus(jobId, onProgress, intervalMs = 1000) {
   return new Promise((resolve, reject) => {

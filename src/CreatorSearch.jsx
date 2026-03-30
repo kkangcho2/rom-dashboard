@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { searchYouTubeChannels, searchYouTubeVideos } from './api';
+import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators } from './api';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, RadarChart, Radar,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -11,7 +11,7 @@ import {
   BarChart3, Activity, Heart, MessageSquare, Clock, CheckCircle2,
   Sparkles, Globe, Target, Hash, Award, Crown, Flame, UserCheck,
   ArrowLeftRight, ExternalLink, ThumbsUp, ThumbsDown, Minus, Settings, RefreshCw,
-  FileSpreadsheet
+  FileSpreadsheet, User
 } from 'lucide-react';
 import { GradeTag, PlatformIcon, MiniTooltip, COLORS_COMPARE } from './components/shared';
 import CreatorCardsTab from './components/CreatorCards';
@@ -71,15 +71,26 @@ function mapChannelToCreator(r, query) {
 }
 
 // ─── Main Component ──────────────────────────────────────────
-export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport }) {
+// (Featured creators are now loaded from API - no hardcoded data)
+
+export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport, isLoggedIn, onLogin, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState('channel');
   const [platformFilter, setPlatformFilter] = useState('all');
+  const [gameFilter, setGameFilter] = useState('전체');
+  const [genreFilter, setGenreFilter] = useState('전체');
   const [sortBy, setSortBy] = useState('subscribers');
   const [compareList, setCompareList] = useState([]);
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [showCompare, setShowCompare] = useState(false);
   const [activeTab, setActiveTab] = useState('live');
+  const [showLoginPopup, setShowLoginPopup] = useState(false);
+  const [loginTab, setLoginTab] = useState('login');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [featuredCreators, setFeaturedCreators] = useState([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
 
   // Live YouTube search results
   const [liveResults, setLiveResults] = useState([]);
@@ -139,6 +150,52 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
     return () => clearTimeout(searchTimer.current);
   }, [searchQuery, searchMode]);
 
+  // Load featured creators from API on mount
+  useEffect(() => {
+    let cancelled = false;
+    setFeaturedLoading(true);
+    getFeaturedCreators()
+      .then(results => {
+        if (cancelled) return;
+        const mapped = results
+          .filter(r => r.subscribers > 0)
+          .map(r => mapChannelToCreator(r, r.game || ''));
+        // Attach game, genre, tier from API response
+        for (let i = 0; i < mapped.length; i++) {
+          if (results[i]?.game) {
+            mapped[i].game = results[i].game;
+            mapped[i].tags = [results[i].game, ...(mapped[i].tags || [])];
+          }
+          if (results[i]?.genre) {
+            mapped[i].genre = results[i].genre;
+          }
+          if (results[i]?.tier) {
+            mapped[i].tier = results[i].tier;
+          }
+        }
+        setFeaturedCreators(mapped);
+        setFeaturedLoading(false);
+      })
+      .catch(err => {
+        console.log('Featured creators API unavailable:', err.message);
+        setFeaturedCreators([]);
+        setFeaturedLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Dynamic game filters based on loaded data
+  const gameFilters = useMemo(() => {
+    const games = new Set(featuredCreators.map(c => c.game).filter(Boolean));
+    return ['전체', ...Array.from(games)];
+  }, [featuredCreators]);
+
+  // Dynamic genre filters based on loaded data
+  const genreFilters = useMemo(() => {
+    const genres = new Set(featuredCreators.map(c => c.genre).filter(Boolean));
+    return ['전체', ...Array.from(genres)];
+  }, [featuredCreators]);
+
   // Filter and sort channel results
   const filtered = useMemo(() => {
     if (searchMode === 'keyword') return [];
@@ -159,6 +216,12 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
     return list;
   }, [searchMode, platformFilter, sortBy, liveResults]);
 
+  // Auth-gated action helper
+  const requireAuth = useCallback((action) => {
+    if (isLoggedIn) { action(); return; }
+    setShowLoginPopup(true);
+  }, [isLoggedIn]);
+
   const toggleCompare = useCallback((id) => {
     setCompareList(prev => {
       if (prev.includes(id)) return prev.filter(x => x !== id);
@@ -167,10 +230,37 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
     });
   }, []);
 
+  // Merge featured + live results for display
+  const allCreators = useMemo(() => {
+    if (liveResults.length > 0) return liveResults;
+    return [];
+  }, [liveResults]);
+
   const compareCreators = useMemo(
-    () => compareList.map(id => liveResults.find(c => c.id === id)).filter(Boolean),
-    [compareList, liveResults]
+    () => {
+      const all = [...allCreators, ...featuredCreators];
+      return compareList.map(id => all.find(c => c.id === id)).filter(Boolean);
+    },
+    [compareList, allCreators]
   );
+
+  // Filter featured creators by game and genre
+  const filteredFeatured = useMemo(() => {
+    let list = [...featuredCreators];
+    if (gameFilter !== '전체') {
+      list = list.filter(c => c.game === gameFilter);
+    }
+    if (genreFilter !== '전체') {
+      list = list.filter(c => c.genre === genreFilter);
+    }
+    list.sort((a, b) => {
+      if (sortBy === 'subscribers') return b.subscribers - a.subscribers;
+      if (sortBy === 'engagement') return b.engagement - a.engagement;
+      if (sortBy === 'adScore') return (b.adScore || 0) - (a.adScore || 0);
+      return 0;
+    });
+    return list;
+  }, [featuredCreators, gameFilter, genreFilter, sortBy]);
 
   // Determine what to show in the main content area
   const hasQuery = searchQuery && searchQuery.length >= 2;
@@ -349,13 +439,13 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
           {/* Action Buttons */}
           <div className="p-6 pt-3 flex gap-3">
             <button
-              onClick={() => { onClose(); onSelectCreator(creator); }}
+              onClick={() => requireAuth(() => { onClose(); onSelectCreator(creator); })}
               className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all flex items-center justify-center gap-2"
             >
               <Sparkles size={16} /> 이 크리에이터로 분석 시작
             </button>
             <button
-              onClick={() => { toggleCompare(creator.id); onClose(); }}
+              onClick={() => requireAuth(() => { toggleCompare(creator.id); onClose(); })}
               className="px-6 py-3 rounded-xl text-sm font-medium border border-dark-600 text-slate-300 hover:border-indigo-500/30 transition-all flex items-center gap-2"
             >
               <ArrowLeftRight size={16} /> {compareList.includes(creator.id) ? '비교 해제' : '비교 추가'}
@@ -501,6 +591,95 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
   // ─── MAIN RENDER ────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-900 flex flex-col">
+      {/* Login Popup Modal */}
+      {showLoginPopup && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLoginPopup(false)}>
+          <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-[420px] shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-dark-600/30 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">
+                {loginTab === 'login' ? '로그인' : '회원가입'}
+              </h2>
+              <button onClick={() => setShowLoginPopup(false)} className="p-1.5 rounded-lg hover:bg-dark-600/50">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="flex gap-1 mb-6 bg-dark-700/50 rounded-xl p-1">
+                <button onClick={() => setLoginTab('login')}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${loginTab === 'login' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400'}`}>
+                  로그인
+                </button>
+                <button onClick={() => setLoginTab('signup')}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${loginTab === 'signup' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400'}`}>
+                  회원가입
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">이메일</label>
+                  <input type="email" placeholder="email@example.com" value={loginEmail} onChange={e => { setLoginEmail(e.target.value); setLoginError(''); }}
+                    className="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">비밀번호</label>
+                  <input type="password" placeholder="••••••••" value={loginPassword} onChange={e => { setLoginPassword(e.target.value); setLoginError(''); }}
+                    className="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all" />
+                </div>
+                {loginTab === 'signup' && (
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">비밀번호 확인</label>
+                    <input type="password" placeholder="••••••••"
+                      className="w-full bg-dark-700 border border-dark-600 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all" />
+                  </div>
+                )}
+                {loginError && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{loginError}</p>
+                )}
+                <button
+                  onClick={() => {
+                    if (!loginEmail.trim() || !loginPassword.trim()) {
+                      setLoginError('이메일과 비밀번호를 입력해주세요.');
+                      return;
+                    }
+                    if (!/\S+@\S+\.\S+/.test(loginEmail)) {
+                      setLoginError('올바른 이메일 형식을 입력해주세요.');
+                      return;
+                    }
+                    const normalizedEmail = loginEmail.trim().toLowerCase();
+                    if (normalizedEmail === 'kangeun1@naver.com') {
+                      if (loginPassword !== 'livedpulse2026') {
+                        setLoginError('비밀번호가 올바르지 않습니다.');
+                        return;
+                      }
+                      onLogin('admin');
+                    } else {
+                      if (loginPassword.length < 6) {
+                        setLoginError('비밀번호는 6자 이상이어야 합니다.');
+                        return;
+                      }
+                      onLogin('user');
+                    }
+                    setShowLoginPopup(false);
+                    setLoginEmail('');
+                    setLoginPassword('');
+                    setLoginError('');
+                  }}
+                  className="w-full py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all"
+                >
+                  {loginTab === 'login' ? '로그인' : '가입하기'}
+                </button>
+              </div>
+              {loginTab === 'login' && (
+                <p className="text-center text-xs text-slate-500 mt-4">
+                  계정이 없으신가요?{' '}
+                  <button onClick={() => setLoginTab('signup')} className="text-indigo-400 hover:underline">회원가입</button>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="border-b border-dark-600/50 bg-dark-800/80 backdrop-blur-lg sticky top-0 z-50">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
@@ -509,19 +688,47 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
               <Sparkles size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-tight">Promo Insight</h1>
-              <p className="text-[10px] text-slate-500">크리에이터 종합 분석 및 비교 대시보드</p>
+              <h1 className="text-base font-bold text-white tracking-tight">LivePulse</h1>
+              <p className="text-[10px] text-slate-500">모바일 게임 크리에이터 분석 플랫폼</p>
             </div>
-          {onGoToReport && (
-            <button onClick={onGoToReport} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-dark-700/50 transition-all">
-              <FileSpreadsheet size={14} /> 리포트 작성
+          <nav className="flex items-center gap-1 ml-4 bg-dark-700/60 rounded-lg p-1 border border-dark-600/40">
+            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-all">
+              <Search size={13} /> 크리에이터 분석
             </button>
-          )}
-          {onGoToAdmin && (
-            <button onClick={onGoToAdmin} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-dark-700/50 transition-all">
-              <Settings size={14} /> 관리 콘솔
-            </button>
-          )}
+            {onGoToReport && (
+              <button onClick={onGoToReport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+                <FileSpreadsheet size={13} /> 방송 리포트
+              </button>
+            )}
+            {onGoToAdmin && (
+              <button onClick={() => requireAuth(onGoToAdmin)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+                <User size={13} /> 관리콘솔 · 내 정보
+              </button>
+            )}
+          </nav>
+          </div>
+          {/* Login/Signup Buttons */}
+          <div className="flex items-center gap-2">
+            {isLoggedIn ? (
+              <>
+                <span className="text-xs text-slate-400 mr-2">환영합니다</span>
+                <button onClick={onLogout}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 border border-dark-600 hover:text-white hover:border-slate-500 transition-all">
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => { setLoginTab('login'); setShowLoginPopup(true); }}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-slate-300 border border-dark-600 hover:text-white hover:border-indigo-500/30 transition-all">
+                  로그인
+                </button>
+                <button onClick={() => { setLoginTab('signup'); setShowLoginPopup(true); }}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/20 transition-all">
+                  회원가입
+                </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -637,28 +844,182 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
         </div>
       )}
 
-      {/* ═══ Landing State ═══ */}
+      {/* ═══ Landing State - Featured Game Creators ═══ */}
       {showLanding && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center py-20">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-dark-600/30 flex items-center justify-center mx-auto mb-6">
-              <Search size={32} className="text-indigo-400/60" />
-            </div>
-            <h3 className="text-lg font-bold text-white mb-2">YouTube 채널 또는 키워드를 검색하세요</h3>
-            <p className="text-sm text-slate-500 max-w-md mx-auto">
-              채널 모드에서 크리에이터를 검색하고 비교 분석하거나,
-              키워드 모드에서 관련 동영상을 탐색할 수 있습니다.
-            </p>
-            <div className="flex gap-3 justify-center mt-6">
-              {['게임 리뷰', '먹방', '테크', 'ASMR', '여행'].map(tag => (
-                <button
-                  key={tag}
-                  onClick={() => setSearchQuery(tag)}
-                  className="text-xs px-4 py-2 rounded-lg bg-dark-800 border border-dark-600/50 text-slate-400 hover:text-indigo-300 hover:border-indigo-500/30 transition-all"
-                >
-                  {tag}
+        <div className="flex-1">
+          <div className="max-w-[1400px] mx-auto px-6 py-6">
+            {/* Genre Filter */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-xs text-slate-500 mr-1"><Target size={12} className="inline mr-1" />장르</span>
+              {genreFilters.map(g => (
+                <button key={g} onClick={() => setGenreFilter(g)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    genreFilter === g
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                      : 'bg-dark-800 text-slate-400 border border-dark-600/50 hover:border-dark-500'
+                  }`}>
+                  {g}
                 </button>
               ))}
+            </div>
+
+            {/* Game Filter Chips */}
+            <div className="flex items-center gap-2 mb-6 flex-wrap">
+              <span className="text-xs text-slate-500 mr-1"><Filter size={12} className="inline mr-1" />게임 필터</span>
+              {gameFilters.map(g => (
+                <button key={g} onClick={() => setGameFilter(g)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    gameFilter === g
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'bg-dark-800 text-slate-400 border border-dark-600/50 hover:border-dark-500'
+                  }`}>
+                  {g}
+                </button>
+              ))}
+            </div>
+
+            {/* Section Title */}
+            <div className="flex items-center gap-2 mb-4">
+              <Flame size={16} className="text-orange-400" />
+              <h3 className="text-sm font-bold text-white">인기 모바일 게임 크리에이터 · MMORPG</h3>
+              <span className="text-[10px] text-slate-500 ml-2">
+                {featuredLoading ? '로딩 중...' : `${filteredFeatured.length}명`}
+              </span>
+              <span className="text-[9px] text-indigo-400/60 ml-1">YouTube 실시간 검색 기반</span>
+            </div>
+
+            {/* Loading State */}
+            {featuredLoading && (
+              <div className="flex items-center justify-center py-20">
+                <RefreshCw size={24} className="text-indigo-400 animate-spin mr-3" />
+                <span className="text-sm text-slate-400">YouTube에서 크리에이터를 검색하고 있습니다...</span>
+              </div>
+            )}
+
+            {/* No Results */}
+            {!featuredLoading && filteredFeatured.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16">
+                <Search size={32} className="text-slate-600 mb-3" />
+                <p className="text-sm text-slate-400 mb-2">위 검색바에서 YouTube 채널을 검색해보세요</p>
+                <p className="text-xs text-slate-500">채널명 또는 키워드로 검색하면 실시간 결과를 보여드립니다</p>
+                <div className="flex gap-2 mt-4 flex-wrap justify-center">
+                  {['리니지M', '리니지W', '오딘', '원신', '스타레일', '니케', '로스트아크', '나이트크로우', '블소', '로드나인'].map(q => (
+                    <button key={q} onClick={() => { setSearchQuery(q); }}
+                      className="px-3 py-1.5 rounded-lg text-xs text-slate-400 border border-dark-600 hover:border-indigo-500/30 hover:text-indigo-300 transition-all">
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Featured Creator Cards Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredFeatured.map(creator => (
+                <div key={creator.id}
+                  className="glass-panel rounded-xl p-4 hover:border-indigo-500/30 transition-all cursor-pointer group relative"
+                  onClick={() => setSelectedCreator(creator)}>
+                  {/* Live Badge */}
+                  {creator._isLive && (
+                    <span className="absolute top-3 right-3 text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                      LIVE
+                    </span>
+                  )}
+                  {/* Avatar + Name */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 border border-dark-600/50 flex items-center justify-center shrink-0">
+                      {creator.avatar ? (
+                        <img src={creator.avatar} alt={creator.name} className="w-full h-full object-cover rounded-xl" />
+                      ) : (
+                        <span className="text-lg font-bold text-white">{creator.name[0]}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{creator.name}</div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                        <PlatformIcon platform={creator.platform} size={10} />
+                        <span>{creator.game}</span>
+                        {creator.tier && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                            creator.tier === 'S' ? 'bg-amber-500/20 text-amber-400' :
+                            creator.tier === 'A' ? 'bg-purple-500/20 text-purple-400' :
+                            creator.tier === 'B' ? 'bg-blue-500/20 text-blue-400' :
+                            'bg-slate-500/20 text-slate-400'
+                          }`}>{creator.tier}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500">구독자</div>
+                      <div className="text-xs font-bold text-slate-200">{creator.subscribers >= 10000 ? `${(creator.subscribers / 10000).toFixed(1)}만` : creator.subscribers.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500">평균조회 <span className="text-[8px] text-amber-400/60">~추정</span></div>
+                      <div className="text-xs font-bold text-slate-200">{creator.avgViews >= 10000 ? `${(creator.avgViews / 10000).toFixed(1)}만` : creator.avgViews.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500">참여율 <span className="text-[8px] text-amber-400/60">~추정</span></div>
+                      <div className="text-xs font-bold text-green-400">{creator.engagement}%</div>
+                    </div>
+                  </div>
+
+                  {/* Grade + Info */}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <GradeTag grade={creator.adGrade} />
+                      <span className="text-[10px] text-slate-500">광고적합도 <span className="text-[8px] text-amber-400/60">~추정</span></span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400">
+                      {creator._sentimentLabel || '분석 필요'}
+                    </span>
+                  </div>
+
+                  {/* Tags */}
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(creator.tags || []).slice(0, 4).map(tag => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-md bg-dark-700/60 text-slate-400 border border-dark-600/30">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Compare Checkbox */}
+                  <div className="mt-3 pt-3 border-t border-dark-600/30 flex items-center justify-between">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); requireAuth(() => toggleCompare(creator.id)); }}
+                      className={`text-[10px] px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                        compareList.includes(creator.id)
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                          : 'bg-dark-700/50 text-slate-400 border border-dark-600/30 hover:border-indigo-500/20'
+                      }`}>
+                      <ArrowLeftRight size={10} />
+                      {compareList.includes(creator.id) ? '비교 선택됨' : '비교 추가'}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); requireAuth(() => onSelectCreator(creator)); }}
+                      className="text-[10px] px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1">
+                      <Sparkles size={10} /> 분석 시작
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick Search Suggestions */}
+            <div className="mt-8 text-center">
+              <p className="text-xs text-slate-500 mb-3">또는 직접 검색해보세요</p>
+              <div className="flex gap-3 justify-center flex-wrap">
+                {['리니지M', '리니지W', '오딘', '원신', '스타레일', '니케', '로스트아크', '나이트크로우', '블소', '로드나인'].map(tag => (
+                  <button key={tag} onClick={() => setSearchQuery(tag)}
+                    className="text-xs px-4 py-2 rounded-lg bg-dark-800 border border-dark-600/50 text-slate-400 hover:text-indigo-300 hover:border-indigo-500/30 transition-all">
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
