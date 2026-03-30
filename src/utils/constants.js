@@ -69,6 +69,53 @@ export const PROFANITY_WORDS = ['시발', 'ㅅㅂ', '병신', 'ㅄ', '개새', '
 
 export const SUGGESTION_WORDS = ['건의', '요청', '제안', '바꿔', '고쳐', '추가해', '부탁', '해주세요', '해줘', '해주삼', '좀', '언제', '왜 안', '개선', '불편', '문제점', '아쉬운', '아쉽', '바라', '원해', '희망', '필요', '~좀', '제발', '이거 좀', '저거 좀', '만들어', '넣어', '수정'];
 
+// ── 봇/Nightbot 필터링 ──
+export const BOT_NAMES = [
+  'nightbot', 'streamelements', 'streamlabs', 'moobot', 'fossabot',
+  'wizebot', 'phantombot', 'serybot', '나이트봇', '스트림엘리먼트',
+];
+export const BOT_PREFIXES = ['!', '/', '$']; // 명령어 프리픽스
+export const BOT_PATTERNS = [
+  /^![\w]+/,                              // !명령어
+  /has subscribed/i,                      // 구독 알림
+  /just subscribed/i,
+  /님이 후원/,                              // 후원 알림
+  /님이 구독/,                              // 구독 알림
+  /팔로우.*감사/,                            // 팔로우 감사 메시지
+  /https?:\/\/\S+/,                       // 링크만 있는 메시지
+  /^@\w+\s*$/,                            // @멘션만 있는 메시지
+];
+
+// 채팅 라인이 봇/노이즈인지 판단
+export function isBotMessage(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length < 2) return true;
+
+  const lower = trimmed.toLowerCase();
+
+  // 봇 이름 체크 (라인에 "Nightbot:" 등 포함)
+  if (BOT_NAMES.some(bot => lower.startsWith(bot + ':') || lower.startsWith(bot + ' '))) return true;
+
+  // 명령어 프리픽스
+  if (BOT_PREFIXES.some(p => trimmed.startsWith(p))) return true;
+
+  // 패턴 매칭
+  if (BOT_PATTERNS.some(p => p.test(trimmed))) return true;
+
+  return false;
+}
+
+// 게임 관련 채팅인지 판단 (GAME_CATS + ACTIVITY_CATS 키워드 기반)
+export function isGameRelatedChat(line) {
+  const lower = line.toLowerCase();
+  const allGameWords = [
+    ...Object.values(GAME_CATS).flat(),
+    ...Object.values(ACTIVITY_CATS).flat(),
+    ...Object.values(NEGATIVE_KW).flat(),
+  ];
+  return allGameWords.some(w => lower.includes(w.toLowerCase()));
+}
+
 export const WORKFLOW_STEPS = [
   { label: '링크 입력', iconName: 'Globe' },
   { label: '데이터 수집', iconName: 'Database' },

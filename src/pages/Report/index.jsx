@@ -135,9 +135,12 @@ export default function DailyReportPage({ inline = false }) {
       '부정 동향': result.negative,
       _activities: result.activities,
       _overallSentiment: result.overallSentiment,
+      _gameSentiment: result.gameSentiment,
       _topQuotes: result.topQuotes,
       _advertiserMetrics: result.advertiserMetrics,
       _suggestions: result.suggestions,
+      _contentIssues: result.contentIssues,
+      _chatStats: result.chatStats,
     });
   };
 
@@ -162,14 +165,18 @@ export default function DailyReportPage({ inline = false }) {
     if (!drReport) return null;
     const activities = drReport._activities || [];
     const overallSentiment = drReport._overallSentiment || { positive: 0, negative: 0, neutral: 0, score: 50 };
+    const gameSentiment = drReport._gameSentiment || { positive: 0, negative: 0, neutral: 0, score: 50, totalLines: 0 };
     const topQuotes = drReport._topQuotes || [];
     const metrics = drReport._advertiserMetrics || {};
     const suggestions = drReport._suggestions || [];
+    const contentIssues = drReport._contentIssues || [];
+    const chatStats = drReport._chatStats || {};
     const basicFields = Object.entries(drReport).filter(([k]) => !k.startsWith('_'));
     const sentTotal = overallSentiment.positive + overallSentiment.negative + overallSentiment.neutral || 1;
     const sentPosP = Math.round(overallSentiment.positive / sentTotal * 100);
     const sentNegP = Math.round(overallSentiment.negative / sentTotal * 100);
     const sentNeuP = 100 - sentPosP - sentNegP;
+    const gameSentTotal = gameSentiment.positive + gameSentiment.negative + gameSentiment.neutral || 1;
 
     return (
       <div className="space-y-4">
@@ -202,6 +209,125 @@ export default function DailyReportPage({ inline = false }) {
             </div>
           )}
         </div>
+
+        {/* Section A-2: 채팅 필터링 & 게임 반응 요약 */}
+        {chatStats.totalRaw > 0 && (
+          <div className="glass-panel rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield size={14} className="text-emerald-400" />
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">채팅 분석 요약</h4>
+              {chatStats.botFiltered > 0 && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  봇/노이즈 {chatStats.botFiltered}건 필터됨
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                <div className="text-[9px] text-slate-500">전체 채팅</div>
+                <div className="text-sm font-bold text-slate-200">{chatStats.totalRaw?.toLocaleString()}</div>
+              </div>
+              <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                <div className="text-[9px] text-slate-500">봇/명령어 제외</div>
+                <div className="text-sm font-bold text-red-400">-{chatStats.botFiltered}</div>
+              </div>
+              <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                <div className="text-[9px] text-slate-500">유효 채팅</div>
+                <div className="text-sm font-bold text-slate-200">{chatStats.afterBotFilter?.toLocaleString()}</div>
+              </div>
+              <div className="bg-dark-700/40 rounded-lg p-2 text-center border border-indigo-500/20">
+                <div className="text-[9px] text-indigo-400">게임 관련</div>
+                <div className="text-sm font-bold text-indigo-300">{chatStats.gameRelated?.toLocaleString()}</div>
+              </div>
+              <div className="bg-dark-700/40 rounded-lg p-2 text-center">
+                <div className="text-[9px] text-slate-500">일반 잡담</div>
+                <div className="text-sm font-bold text-slate-400">{chatStats.generalChat?.toLocaleString()}</div>
+              </div>
+            </div>
+
+            {/* 게임 반응 감성 vs 전체 감성 비교 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-dark-700/30 rounded-lg p-3">
+                <div className="text-[10px] text-slate-500 mb-2">전체 감성</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-bold" style={{ color: overallSentiment.score >= 60 ? '#22c55e' : overallSentiment.score >= 40 ? '#eab308' : '#ef4444' }}>
+                    {overallSentiment.score}점
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-2 rounded-full bg-dark-600 overflow-hidden flex">
+                      <div className="h-full bg-green-500" style={{ width: sentPosP + '%' }} />
+                      <div className="h-full bg-slate-500" style={{ width: sentNeuP + '%' }} />
+                      <div className="h-full bg-red-500" style={{ width: sentNegP + '%' }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-[9px]">
+                      <span className="text-green-400">긍정 {sentPosP}%</span>
+                      <span className="text-slate-400">중립 {sentNeuP}%</span>
+                      <span className="text-red-400">부정 {sentNegP}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-dark-700/30 rounded-lg p-3 border border-indigo-500/10">
+                <div className="text-[10px] text-indigo-400 mb-2">🎮 게임 반응만</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl font-bold" style={{ color: gameSentiment.score >= 60 ? '#22c55e' : gameSentiment.score >= 40 ? '#eab308' : '#ef4444' }}>
+                    {gameSentiment.score}점
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-2 rounded-full bg-dark-600 overflow-hidden flex">
+                      <div className="h-full bg-green-500" style={{ width: Math.round(gameSentiment.positive / gameSentTotal * 100) + '%' }} />
+                      <div className="h-full bg-slate-500" style={{ width: Math.round(gameSentiment.neutral / gameSentTotal * 100) + '%' }} />
+                      <div className="h-full bg-red-500" style={{ width: Math.round(gameSentiment.negative / gameSentTotal * 100) + '%' }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-[9px]">
+                      <span className="text-green-400">긍정 {Math.round(gameSentiment.positive / gameSentTotal * 100)}%</span>
+                      <span className="text-indigo-300">{gameSentiment.totalLines}건 분석</span>
+                      <span className="text-red-400">부정 {Math.round(gameSentiment.negative / gameSentTotal * 100)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section A-3: 컨텐츠별 이슈 트래커 */}
+        {contentIssues.length > 0 && (
+          <div className="glass-panel rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Target size={14} className="text-red-400" />
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">컨텐츠별 이슈 감지</h4>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+                {contentIssues.length}건
+              </span>
+            </div>
+            <div className="space-y-2">
+              {contentIssues.map((issue, i) => (
+                <div key={i} className={`rounded-lg p-3 border ${
+                  issue.severity === 'high' ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'
+                }`}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                      issue.severity === 'high' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                      {issue.severity === 'high' ? '🔴 주의' : '🟡 관찰'}
+                    </span>
+                    <span className="text-xs font-medium text-slate-300">{issue.summary}</span>
+                  </div>
+                  {issue.quotes && issue.quotes.length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      {issue.quotes.map((q, j) => (
+                        <div key={j} className="text-[10px] text-slate-400 pl-3 border-l-2 border-slate-600">
+                          "{q}"
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Section B: 콘텐츠 활동 타임라인 */}
         {activities.length > 0 && (
