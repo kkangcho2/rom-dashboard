@@ -92,11 +92,13 @@ export default function DailyReportPage({ inline = false }) {
           if (isLongStream) {
             const hours = durSec / 3600;
             let ratio;
-            if (views < 2000) ratio = 4 + hours * 0.5;
+            // 소규모 라이브: 조회수가 시청자 수와 비슷하거나 낮을 수 있음
+            if (views < 500) ratio = 1.8 + hours * 0.2;
+            else if (views < 2000) ratio = 3.5 + hours * 0.4;
             else if (views < 20000) ratio = 6 + hours * 0.7;
             else ratio = 10 + hours * 1.0;
-            estimatedPeak = Math.round(views / ratio * 1.4);
             estimatedAvg = Math.round(views / ratio);
+            estimatedPeak = Math.round(estimatedAvg * 1.44);
           } else {
             estimatedPeak = views;
             estimatedAvg = Math.round(views * 0.7);
