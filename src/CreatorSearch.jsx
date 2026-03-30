@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators } from './api';
+import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators, getCreatorRoster } from './api';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, RadarChart, Radar,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -91,6 +91,8 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
   const [loginError, setLoginError] = useState('');
   const [featuredCreators, setFeaturedCreators] = useState([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [rosterCreators, setRosterCreators] = useState([]);
+  const [rosterLoading, setRosterLoading] = useState(true);
 
   // Live YouTube search results
   const [liveResults, setLiveResults] = useState([]);
@@ -180,6 +182,23 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
         console.log('Featured creators API unavailable:', err.message);
         setFeaturedCreators([]);
         setFeaturedLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load creator roster on mount
+  useEffect(() => {
+    let cancelled = false;
+    setRosterLoading(true);
+    getCreatorRoster()
+      .then(data => {
+        if (cancelled) return;
+        setRosterCreators(data);
+        setRosterLoading(false);
+      })
+      .catch(() => {
+        setRosterCreators([]);
+        setRosterLoading(false);
       });
     return () => { cancelled = true; };
   }, []);
@@ -1008,6 +1027,41 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
                 </div>
               ))}
             </div>
+
+            {/* Registered Creator Roster */}
+            {!rosterLoading && rosterCreators.length > 0 && (
+              <div className="mt-8 border-t border-dark-600/30 pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <UserCheck size={16} className="text-green-400" />
+                  <h3 className="text-sm font-bold text-white">등록 크리에이터 명단</h3>
+                  <span className="text-[10px] text-slate-500 ml-2">{rosterCreators.length}명</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {rosterCreators.map((c, i) => {
+                    const isMatched = featuredCreators.some(fc => fc.name.includes(c.name) || c.name.includes(fc.name));
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { setSearchQuery(c.name); setSearchMode('channel'); }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                          isMatched
+                            ? 'bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25'
+                            : 'bg-dark-700 text-slate-400 border border-dark-600/50 hover:border-indigo-500/30 hover:text-indigo-300'
+                        }`}
+                        title={isMatched ? `${c.name} - YouTube 매칭됨` : `${c.name} - 클릭하여 검색`}
+                      >
+                        {isMatched && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 mr-1" />}
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-600 mt-2">
+                  <span className="text-green-400">●</span> YouTube 매칭됨 &nbsp;|&nbsp;
+                  클릭하면 해당 크리에이터를 YouTube에서 검색합니다
+                </p>
+              </div>
+            )}
 
             {/* Quick Search Suggestions */}
             <div className="mt-8 text-center">

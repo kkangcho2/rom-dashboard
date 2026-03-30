@@ -5,6 +5,8 @@ const youtube = require('./crawlers/youtube.cjs');
 const afreeca = require('./crawlers/afreeca.cjs');
 const chzzk = require('./crawlers/chzzk.cjs');
 
+const CREATOR_ROSTER = require('./data/creator-roster.json');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -360,6 +362,22 @@ const SEED_QUERIES = [
   { query: '모바일게임 매출 순위 리뷰', game: '종합', genre: '종합', tier: 'A' },
 ];
 
+// ─── API: Creator Roster ────────────────────────────────────
+app.get('/api/roster', (req, res) => {
+  res.json(CREATOR_ROSTER);
+});
+
+app.get('/api/roster/search', async (req, res) => {
+  const { name } = req.query;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const channels = await youtube.searchChannels(name, 3);
+    res.json({ ok: true, results: channels });
+  } catch (err) {
+    res.json({ ok: false, results: [], error: err.message });
+  }
+});
+
 let featuredCache = null;
 let featuredCacheTime = 0;
 const FEATURED_CACHE_TTL = 1000 * 60 * 60; // 1시간 캐시
@@ -395,9 +413,31 @@ app.get('/api/featured-creators', async (req, res) => {
       }
     }
 
-    // 구독자 순으로 정렬하고 상위 30개
+    // Merge roster creators that weren't found via YouTube
+    for (const entry of CREATOR_ROSTER) {
+      if (!results.find(r => r.name === entry.name || r.name.includes(entry.name))) {
+        results.push({
+          channelId: `roster_${entry.name}`,
+          name: entry.name,
+          subscribers: 0,
+          subscriberText: '등록 크리에이터',
+          thumbnail: '',
+          description: '',
+          videoCount: 0,
+          url: '',
+          platform: 'roster',
+          game: '로드나인',
+          genre: 'MMORPG',
+          tier: 'B',
+          _source: 'roster',
+          _searchedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 구독자 순으로 정렬하고 상위 50개
     results.sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0));
-    const featured = results.slice(0, 30);
+    const featured = results.slice(0, 50);
 
     featuredCache = featured;
     featuredCacheTime = Date.now();

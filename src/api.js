@@ -104,6 +104,18 @@ export async function fetchYtChat(url) {
   return res.json();
 }
 
+export async function getCreatorRoster() {
+  const res = await fetch(`${API_BASE}/roster`);
+  if (!res.ok) throw new Error('Roster fetch failed');
+  return res.json();
+}
+
+export async function searchRosterCreator(name) {
+  const res = await fetch(`${API_BASE}/roster/search?name=${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error('Roster search failed');
+  return res.json();
+}
+
 // Poll for crawl completion
 export function pollCrawlStatus(jobId, onProgress, intervalMs = 1000) {
   return new Promise((resolve, reject) => {
