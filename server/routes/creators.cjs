@@ -100,7 +100,7 @@ function getGenreForGame(game) {
     '두근두근타운': '시뮬레이션', '컴투스프로야구': '스포츠',
     '삼국지 전략판': '전략', 'DX: 각성자들': '전략',
   };
-  return map[game] || 'MMORPG';
+  return map[game] || '롤플레잉';
 }
 
 function nameSimilarity(a, b) {
@@ -199,26 +199,34 @@ module.exports = function(db) {
                 const sim = nameSimilarity(best.name, entry.name);
 
                 if (sim >= 0.3 && !results.find(r => r.channelId === best.channelId)) {
-                  // 2단계: 최근 영상 검색으로 게임 자동 감지
+                  // 2단계: 최근 영상 20개 분석으로 게임 자동 감지
                   let detectedGames = [];
                   try {
-                    const videos = await youtube.searchVideos(`${best.name} 게임`, 5);
+                    // 채널명으로 검색 (영상 20개)
+                    const videos = await youtube.searchVideos(best.name, 20);
+                    // 해당 채널의 영상만 필터 (이름 유사도 0.5 이상)
                     const myVideos = videos.filter(v =>
                       v.channelName === best.name ||
-                      nameSimilarity(v.channelName, best.name) >= 0.7
+                      nameSimilarity(v.channelName, best.name) >= 0.5
                     );
-                    const titles = myVideos.length > 0
+                    // 내 영상이 3개 이상이면 그것만, 아니면 전체에서 추출
+                    const titles = myVideos.length >= 3
                       ? myVideos.map(v => v.title)
-                      : videos.slice(0, 3).map(v => v.title);
+                      : videos.slice(0, 10).map(v => v.title);
                     detectedGames = detectGamesFromTitles(titles);
+
+                    // 감지 실패 시 채널 설명에서도 시도
+                    if (detectedGames.length === 0 && best.description) {
+                      detectedGames = detectGamesFromTitles([best.description]);
+                    }
                   } catch (e) {
                     // 영상 검색 실패 시 무시
                   }
 
-                  // 게임이 감지되지 않으면 roster.json의 기본값 사용
+                  // 게임이 감지되지 않으면 '종합'으로 (로드나인 강제 배정 방지)
                   const games = detectedGames.length > 0
                     ? detectedGames
-                    : (entry.games || ['종합']);
+                    : ['종합'];
                   const mainGame = games[0];
                   const genre = getGenreForGame(mainGame);
 

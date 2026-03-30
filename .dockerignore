@@ -1,0 +1,12 @@
+node_modules
+dist
+src
+public
+*.md
+.git
+.env
+.vscode
+vite.config.js
+tailwind.config.js
+eslint.config.js
+index.html
