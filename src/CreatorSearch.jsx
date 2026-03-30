@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators, getCreatorRoster } from './api';
+import { useNavigate } from 'react-router-dom';
+import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators, getCreatorRoster } from './services/api';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, RadarChart, Radar,
   PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -74,6 +75,7 @@ function mapChannelToCreator(r, query) {
 // (Featured creators are now loaded from API - no hardcoded data)
 
 export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport, isLoggedIn, onLogin, onLogout }) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState('channel');
   const [platformFilter, setPlatformFilter] = useState('all');
@@ -152,68 +154,55 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
     return () => clearTimeout(searchTimer.current);
   }, [searchQuery, searchMode]);
 
-  // Load featured creators from API on mount
+  // Load featured creators + roster on mount (merge all into one list)
   useEffect(() => {
     let cancelled = false;
     setFeaturedLoading(true);
-    getFeaturedCreators()
-      .then(results => {
-        if (cancelled) return;
-        const mapped = results
-          .filter(r => r.subscribers > 0)
-          .map(r => mapChannelToCreator(r, r.game || ''));
-        // Attach game, genre, tier from API response
-        for (let i = 0; i < mapped.length; i++) {
-          if (results[i]?.game) {
-            mapped[i].game = results[i].game;
-            mapped[i].tags = [results[i].game, ...(mapped[i].tags || [])];
-          }
-          if (results[i]?.genre) {
-            mapped[i].genre = results[i].genre;
-          }
-          if (results[i]?.tier) {
-            mapped[i].tier = results[i].tier;
-          }
+
+    Promise.all([
+      getFeaturedCreators().catch(() => []),
+      getCreatorRoster().catch(() => []),
+    ]).then(([apiResults, roster]) => {
+      if (cancelled) return;
+
+      // 1) Map API results (YouTube-searched creators)
+      const validResults = apiResults.filter(r => r.subscribers > 0);
+      const mapped = validResults.map(r => mapChannelToCreator(r, r.game || ''));
+      for (let i = 0; i < mapped.length; i++) {
+        const src = validResults[i];
+        if (src?.game) { mapped[i].game = src.game; mapped[i].tags = [src.game, ...(mapped[i].tags || [])]; }
+        // 멀티 게임 지원: games 배열이 있으면 tags에 추가
+        if (src?.games && Array.isArray(src.games)) {
+          mapped[i].games = src.games;
+          mapped[i].tags = [...new Set([...src.games, ...(mapped[i].tags || [])])];
         }
-        setFeaturedCreators(mapped);
-        setFeaturedLoading(false);
-      })
-      .catch(err => {
-        console.log('Featured creators API unavailable:', err.message);
-        setFeaturedCreators([]);
-        setFeaturedLoading(false);
-      });
+        if (src?.genre) mapped[i].genre = src.genre;
+        if (src?.tier) mapped[i].tier = src.tier;
+      }
+
+      setFeaturedCreators(mapped);
+      setRosterCreators(roster);
+      setFeaturedLoading(false);
+      setRosterLoading(false);
+    });
+
     return () => { cancelled = true; };
   }, []);
 
-  // Load creator roster on mount
-  useEffect(() => {
-    let cancelled = false;
-    setRosterLoading(true);
-    getCreatorRoster()
-      .then(data => {
-        if (cancelled) return;
-        setRosterCreators(data);
-        setRosterLoading(false);
-      })
-      .catch(() => {
-        setRosterCreators([]);
-        setRosterLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
+  // ── Google Play 매출 TOP 20 게임 (고정) ──
+  const gameFilters = [
+    '전체', '아이온2', '리니지M', '로블록스', '마비노기 모바일', '조선협객전',
+    '세븐나이츠 리버스', '스톤에이지 키우기', '메이플 키우기', '두근두근타운',
+    '오딘', '승리의 여신: 니케', '창세기전 키우기', '브롤스타즈', '뱀피르',
+    '로드나인', '컴투스프로야구', '검은사막 모바일', '리니지2M', '일곱 개의 대죄'
+  ];
 
-  // Dynamic game filters based on loaded data
-  const gameFilters = useMemo(() => {
-    const games = new Set(featuredCreators.map(c => c.game).filter(Boolean));
-    return ['전체', ...Array.from(games)];
-  }, [featuredCreators]);
-
-  // Dynamic genre filters based on loaded data
-  const genreFilters = useMemo(() => {
-    const genres = new Set(featuredCreators.map(c => c.genre).filter(Boolean));
-    return ['전체', ...Array.from(genres)];
-  }, [featuredCreators]);
+  // ── Google Play 게임 장르 전체 (17개) ──
+  const genreFilters = [
+    '전체', '롤플레잉', 'MMORPG', '액션', '어드벤처', '아케이드', '보드', '카드',
+    '카지노', '캐주얼', '교육', '음악', '퍼즐', '레이싱', '시뮬레이션',
+    '스포츠', '전략', '퀴즈', '단어'
+  ];
 
   // Filter and sort channel results
   const filtered = useMemo(() => {
@@ -263,11 +252,15 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
     [compareList, allCreators]
   );
 
-  // Filter featured creators by game and genre
+  // Filter featured creators by game and genre (멀티 게임 지원)
   const filteredFeatured = useMemo(() => {
     let list = [...featuredCreators];
     if (gameFilter !== '전체') {
-      list = list.filter(c => c.game === gameFilter);
+      list = list.filter(c =>
+        c.game === gameFilter ||
+        (c.games && c.games.includes(gameFilter)) ||
+        (c.tags && c.tags.includes(gameFilter))
+      );
     }
     if (genreFilter !== '전체') {
       list = list.filter(c => c.genre === genreFilter);
@@ -458,7 +451,7 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
           {/* Action Buttons */}
           <div className="p-6 pt-3 flex gap-3">
             <button
-              onClick={() => requireAuth(() => { onClose(); onSelectCreator(creator); })}
+              onClick={() => requireAuth(() => { onClose(); onSelectCreator(creator); navigate('/dashboard'); })}
               className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all flex items-center justify-center gap-2"
             >
               <Sparkles size={16} /> 이 크리에이터로 분석 시작
@@ -715,12 +708,12 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
               <Search size={13} /> 크리에이터 분석
             </button>
             {onGoToReport && (
-              <button onClick={onGoToReport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+              <button onClick={() => navigate('/report')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
                 <FileSpreadsheet size={13} /> 방송 리포트
               </button>
             )}
             {onGoToAdmin && (
-              <button onClick={() => requireAuth(onGoToAdmin)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+              <button onClick={() => requireAuth(() => navigate('/admin'))} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
                 <User size={13} /> 관리콘솔 · 내 정보
               </button>
             )}
@@ -1019,7 +1012,7 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
                       {compareList.includes(creator.id) ? '비교 선택됨' : '비교 추가'}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); requireAuth(() => onSelectCreator(creator)); }}
+                      onClick={(e) => { e.stopPropagation(); requireAuth(() => { onSelectCreator(creator); navigate('/dashboard'); }); }}
                       className="text-[10px] px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1">
                       <Sparkles size={10} /> 분석 시작
                     </button>
@@ -1028,40 +1021,6 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
               ))}
             </div>
 
-            {/* Registered Creator Roster */}
-            {!rosterLoading && rosterCreators.length > 0 && (
-              <div className="mt-8 border-t border-dark-600/30 pt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <UserCheck size={16} className="text-green-400" />
-                  <h3 className="text-sm font-bold text-white">등록 크리에이터 명단</h3>
-                  <span className="text-[10px] text-slate-500 ml-2">{rosterCreators.length}명</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {rosterCreators.map((c, i) => {
-                    const isMatched = featuredCreators.some(fc => fc.name.includes(c.name) || c.name.includes(fc.name));
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => { setSearchQuery(c.name); setSearchMode('channel'); }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                          isMatched
-                            ? 'bg-green-500/15 text-green-400 border border-green-500/20 hover:bg-green-500/25'
-                            : 'bg-dark-700 text-slate-400 border border-dark-600/50 hover:border-indigo-500/30 hover:text-indigo-300'
-                        }`}
-                        title={isMatched ? `${c.name} - YouTube 매칭됨` : `${c.name} - 클릭하여 검색`}
-                      >
-                        {isMatched && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400 mr-1" />}
-                        {c.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-slate-600 mt-2">
-                  <span className="text-green-400">●</span> YouTube 매칭됨 &nbsp;|&nbsp;
-                  클릭하면 해당 크리에이터를 YouTube에서 검색합니다
-                </p>
-              </div>
-            )}
 
             {/* Quick Search Suggestions */}
             <div className="mt-8 text-center">
