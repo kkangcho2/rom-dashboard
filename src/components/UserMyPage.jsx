@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   User, Building2, Mail, PlayCircle, Tv, CreditCard, Download,
-  AlertCircle, Zap, TrendingUp, Settings, BarChart3, Receipt
+  AlertCircle, Zap, TrendingUp, Settings, BarChart3, Receipt, Lock, Phone, Briefcase, Loader2
 } from 'lucide-react';
 import { GlassCard } from './shared';
+import useAuthStore from '../store/useAuthStore';
 
 const RECEIPT_DATA = [
   { id: 'INV-2026-03', date: '2026-03-29', plan: 'Professional', amount: 99000, method: '신한카드 ****1234' },
@@ -36,10 +37,44 @@ function ProgressBar({ value, max, color, label, sublabel }) {
 }
 
 export default function UserMyPage() {
+  const { user, updateProfile, changePassword } = useAuthStore();
   const [activeTab, setActiveTab] = useState('profile');
   const [ytToggle, setYtToggle] = useState(true);
   const [afToggle, setAfToggle] = useState(false);
   const [autoRenew, setAutoRenew] = useState(true);
+
+  // 프로필 수정
+  const [profileName, setProfileName] = useState(user?.name || '');
+  const [profilePhone, setProfilePhone] = useState(user?.phone || '');
+  const [profileCompany, setProfileCompany] = useState(user?.company || '');
+  const [profileDepartment, setProfileDepartment] = useState(user?.department || '');
+  const [profileMsg, setProfileMsg] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  // 비밀번호 변경
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwMsg, setPwMsg] = useState({ text: '', ok: false });
+  const [pwSaving, setPwSaving] = useState(false);
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    const result = await updateProfile({ name: profileName, phone: profilePhone, company: profileCompany, department: profileDepartment });
+    setProfileMsg(result.ok ? '저장되었습니다' : (result.error || '저장 실패'));
+    setProfileSaving(false);
+    setTimeout(() => setProfileMsg(''), 3000);
+  };
+
+  const handleChangePw = async () => {
+    if (newPw.length < 8) { setPwMsg({ text: '새 비밀번호는 8자 이상이어야 합니다', ok: false }); return; }
+    if (newPw !== confirmPw) { setPwMsg({ text: '새 비밀번호가 일치하지 않습니다', ok: false }); return; }
+    setPwSaving(true);
+    const result = await changePassword(currentPw, newPw);
+    setPwMsg({ text: result.ok ? result.message : (result.error || '변경 실패'), ok: result.ok });
+    setPwSaving(false);
+    if (result.ok) { setCurrentPw(''); setNewPw(''); setConfirmPw(''); }
+  };
 
   const tabs = [
     { id: 'profile', label: '프로필 설정', icon: User },
@@ -89,31 +124,93 @@ export default function UserMyPage() {
 
               <GlassCard className="p-6 space-y-5">
                 <div className="flex items-center gap-4 pb-5 border-b border-[#374766]/30">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500/40 to-purple-500/40 flex items-center justify-center text-xl font-bold text-white">강</div>
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500/40 to-purple-500/40 flex items-center justify-center text-xl font-bold text-white">
+                    {(user?.name || user?.email || '?')[0]}
+                  </div>
                   <div>
-                    <div className="text-sm font-bold text-white">강은충</div>
-                    <div className="text-xs text-slate-400">kangeun1@naver.com</div>
-                    <span className="mt-1.5 inline-block text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-medium">Professional 플랜</span>
+                    <div className="text-sm font-bold text-white">{user?.name || '이름 미설정'}</div>
+                    <div className="text-xs text-slate-400">{user?.email}</div>
+                    <span className="mt-1.5 inline-block text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-medium">{user?.plan || 'Free'} 플랜 · {user?.role === 'admin' ? '관리자' : user?.role === 'tester' ? '테스터' : user?.role === 'paid_user' ? '유료' : '무료'}</span>
                   </div>
                 </div>
-                {[
-                  { label: '이름', value: '강은충', icon: User },
-                  { label: '회사명', value: '더블엠컴퍼니', icon: Building2 },
-                  { label: '이메일', value: 'kangeun1@naver.com', icon: Mail },
-                ].map((field, i) => (
-                  <div key={i}>
-                    <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">{field.label}</label>
+                {/* 이름 */}
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">이름</label>
+                  <div className="relative">
+                    <User size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input value={profileName} onChange={e => setProfileName(e.target.value)} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
+                  </div>
+                </div>
+                {/* 연락처 */}
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">연락처</label>
+                  <div className="relative">
+                    <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="010-0000-0000" className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                  </div>
+                </div>
+                {/* 이메일 (읽기 전용) */}
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">이메일</label>
+                  <div className="relative">
+                    <Mail size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input value={user?.email || ''} readOnly className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-500 cursor-not-allowed" />
+                  </div>
+                </div>
+                {/* 회사/부서 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">회사명</label>
                     <div className="relative">
-                      <field.icon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input
-                        defaultValue={field.value}
-                        className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50 transition-colors"
-                      />
+                      <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input value={profileCompany} onChange={e => setProfileCompany(e.target.value)} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
                     </div>
                   </div>
-                ))}
-                <button className="px-4 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 transition-colors">
-                  변경사항 저장
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">부서</label>
+                    <div className="relative">
+                      <Briefcase size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input value={profileDepartment} onChange={e => setProfileDepartment(e.target.value)} className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg pl-9 pr-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleSaveProfile} disabled={profileSaving}
+                    className="px-4 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 transition-colors flex items-center gap-2 disabled:opacity-50">
+                    {profileSaving && <Loader2 size={12} className="animate-spin" />} 변경사항 저장
+                  </button>
+                  {profileMsg && <span className="text-[11px] text-green-400">{profileMsg}</span>}
+                </div>
+              </GlassCard>
+
+              {/* 비밀번호 변경 */}
+              <GlassCard className="p-6 space-y-4">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Lock size={14} className="text-slate-400" /> 비밀번호 변경
+                </h3>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">현재 비밀번호</label>
+                  <input type="password" value={currentPw} onChange={e => { setCurrentPw(e.target.value); setPwMsg({ text: '', ok: false }); }}
+                    className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">새 비밀번호 (8자 이상)</label>
+                    <input type="password" value={newPw} onChange={e => { setNewPw(e.target.value); setPwMsg({ text: '', ok: false }); }}
+                      className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5 block">비밀번호 확인</label>
+                    <input type="password" value={confirmPw} onChange={e => { setConfirmPw(e.target.value); setPwMsg({ text: '', ok: false }); }}
+                      className="w-full bg-[#1a2035] border border-[#374766]/50 rounded-lg px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50" />
+                  </div>
+                </div>
+                {pwMsg.text && (
+                  <p className={`text-xs px-3 py-2 rounded-lg ${pwMsg.ok ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>{pwMsg.text}</p>
+                )}
+                <button onClick={handleChangePw} disabled={pwSaving || !currentPw || !newPw}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-colors flex items-center gap-2 disabled:opacity-50">
+                  {pwSaving && <Loader2 size={12} className="animate-spin" />} 비밀번호 변경
                 </button>
               </GlassCard>
 

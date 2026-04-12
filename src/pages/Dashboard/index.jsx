@@ -72,7 +72,7 @@ export default function Dashboard() {
               <Sparkles size={16} className="text-white hidden md:block" />
             </div>
             <div>
-              <h1 className="text-xs md:text-sm font-bold text-white tracking-tight">LivePulse</h1>
+              <h1 className="text-xs md:text-sm font-bold text-white tracking-tight">LivedPulse</h1>
               <p className="text-[9px] md:text-[10px] text-slate-500 hidden sm:block">크리에이터 분석 & 리포트 생성 플랫폼</p>
             </div>
           </div>
@@ -140,7 +140,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-slate-300">
-                    {analysisRunning ? '데이터를 분석하고 있습니다...' : 'LivePulse'}
+                    {analysisRunning ? '데이터를 분석하고 있습니다...' : 'LivedPulse'}
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
                     {analysisRunning

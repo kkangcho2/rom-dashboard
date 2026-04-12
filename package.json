@@ -7,6 +7,8 @@
     "dev": "vite",
     "server": "node server/index.cjs",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "vite build",
     "deploy": "vite build && wrangler pages deploy dist --project-name livepulse",
     "lint": "eslint .",
@@ -15,10 +17,14 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "axios": "^1.14.0",
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.7.0",
     "puppeteer-core": "^24.40.0",
     "react": "^19.2.4",
@@ -37,6 +43,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "vitest": "^4.1.2"
   }
 }

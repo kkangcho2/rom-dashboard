@@ -1,6 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import useAuthStore from './store/useAuthStore';
+import { ProtectedRoute, AdminRoute } from './components/ProtectedRoute';
 import { ErrorBoundary, ToastContainer } from './components/ui';
 import './index.css';
 
@@ -9,6 +10,15 @@ const CreatorSearch = lazy(() => import('./CreatorSearch'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const DailyReportPage = lazy(() => import('./pages/Report'));
 const SaasAdmin = lazy(() => import('./SaasAdmin'));
+const AuthPage = lazy(() => import('./components/AuthPage'));
+const AnalysisPage = lazy(() => import('./pages/Analysis'));
+
+// Marketplace pages (lazy loaded)
+const MarketplaceLayout = lazy(() => import('./pages/marketplace/MarketplaceLayout'));
+const PortfolioPage = lazy(() => import('./pages/marketplace/PortfolioPage'));
+const SearchPage = lazy(() => import('./pages/marketplace/SearchPage'));
+const CampaignPage = lazy(() => import('./pages/marketplace/CampaignPage'));
+const OnboardingPage = lazy(() => import('./pages/marketplace/OnboardingPage'));
 
 // Page loading fallback
 function PageLoader() {
@@ -21,14 +31,30 @@ function PageLoader() {
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         </div>
-        <p className="text-xs text-slate-500">로딩 중...</p>
+        <p className="text-xs text-slate-500">...</p>
       </div>
     </div>
   );
 }
 
+// Marketplace wrapper with shared layout
+function MarketplaceWrapper({ children }) {
+  return (
+    <MarketplaceLayout>
+      {children}
+    </MarketplaceLayout>
+  );
+}
+
 export default function App() {
-  const { isLoggedIn, userRole, login, logout } = useAuthStore();
+  const initialize = useAuthStore((s) => s.initialize);
+  const initialized = useAuthStore((s) => s.initialized);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  if (!initialized) return <PageLoader />;
 
   return (
     <BrowserRouter>
@@ -37,34 +63,30 @@ export default function App() {
         <Suspense fallback={<PageLoader />}>
           <div id="main-content">
             <Routes>
-            <Route
-              path="/"
-              element={
-                <CreatorSearch
-                  onSelectCreator={() => {}}
-                  onGoToAdmin={() => {}}
-                  onGoToReport={() => {}}
-                  isLoggedIn={isLoggedIn}
-                  onLogin={login}
-                  onLogout={logout}
-                />
-              }
-            />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/report" element={<DailyReportPage inline={true} />} />
-            <Route
-              path="/admin/*"
-              element={
-                <SaasAdmin
-                  onGoToDashboard={() => {}}
-                  isLoggedIn={isLoggedIn}
-                  userRole={userRole}
-                  onLogin={login}
-                  onLogout={logout}
-                />
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
+              {/* 공개 페이지 */}
+              <Route path="/" element={<CreatorSearch />} />
+              <Route path="/login" element={<AuthPage />} />
+
+              {/* ═══ 마켓플레이스 (공유 레이아웃) ═══ */}
+              <Route path="/marketplace" element={<MarketplaceWrapper><PortfolioPage /></MarketplaceWrapper>} />
+              <Route path="/marketplace/portfolio/:creatorId" element={<MarketplaceWrapper><PortfolioPage /></MarketplaceWrapper>} />
+              <Route path="/marketplace/search" element={<ProtectedRoute><MarketplaceWrapper><SearchPage /></MarketplaceWrapper></ProtectedRoute>} />
+              <Route path="/marketplace/campaigns" element={<ProtectedRoute><MarketplaceWrapper><CampaignPage /></MarketplaceWrapper></ProtectedRoute>} />
+              <Route path="/marketplace/campaigns/:campaignId" element={<ProtectedRoute><MarketplaceWrapper><CampaignPage /></MarketplaceWrapper></ProtectedRoute>} />
+              <Route path="/marketplace/onboarding" element={<ProtectedRoute><MarketplaceWrapper><OnboardingPage /></MarketplaceWrapper></ProtectedRoute>} />
+
+              {/* 로그인 필수 */}
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/report" element={<ProtectedRoute><DailyReportPage inline={true} /></ProtectedRoute>} />
+
+              {/* 크리에이터 분석 */}
+              <Route path="/analysis" element={<ProtectedRoute><AnalysisPage /></ProtectedRoute>} />
+
+              {/* 관리자 전용 */}
+              <Route path="/admin/*" element={<AdminRoute><SaasAdmin /></AdminRoute>} />
+
+              {/* 폴백 */}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </div>
         </Suspense>

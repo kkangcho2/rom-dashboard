@@ -29,7 +29,7 @@ export default function ReportTab({ data }) {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'LivePulse_분석리포트.csv';
+    link.download = 'LivedPulse_분석리포트.csv';
     link.click();
   }, [data]);
 

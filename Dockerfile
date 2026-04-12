@@ -1,12 +1,13 @@
 FROM node:20-slim
 
-# Install yt-dlp, ffmpeg, python3
+# Install yt-dlp, ffmpeg, python3, deno (JS runtime for yt-dlp), unzip
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip ffmpeg curl ca-certificates \
-    build-essential python3-setuptools \
+    build-essential python3-setuptools unzip \
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
   && chmod a+rx /usr/local/bin/yt-dlp \
-  && apt-get purge -y --auto-remove curl build-essential \
+  && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+  && apt-get purge -y --auto-remove curl build-essential unzip \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,7 +18,8 @@ COPY server/ ./server/
 
 # Install only production dependencies needed for the server
 RUN npm install --omit=dev --ignore-scripts \
-  && npm rebuild better-sqlite3
+  && npm rebuild better-sqlite3 \
+  && npm rebuild bcrypt
 
 # Expose port
 EXPOSE 8080

@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import useAuthStore from './store/useAuthStore';
 import { searchYouTubeChannels, searchYouTubeVideos, getFeaturedCreators, getCreatorRoster } from './services/api';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, RadarChart, Radar,
@@ -28,12 +29,15 @@ function getAdGrade(subscribers) {
 }
 
 function estimateEngagement(subscribers) {
-  // Smaller channels tend to have higher engagement rates
-  if (subscribers > 100000) return 2.5;
-  if (subscribers > 50000) return 3.8;
-  if (subscribers > 10000) return 5.2;
-  if (subscribers > 1000) return 7.0;
-  return 9.5;
+  // 구독자 수 기반 인게이지먼트 추정 (결정적 변동)
+  const seed = (subscribers % 100) / 100; // 0.00~0.99
+  if (subscribers > 1000000) return +(1.2 + seed * 0.8).toFixed(1);   // 1.2~2.0%
+  if (subscribers > 500000) return +(1.8 + seed * 1.2).toFixed(1);    // 1.8~3.0%
+  if (subscribers > 100000) return +(2.5 + seed * 1.5).toFixed(1);    // 2.5~4.0%
+  if (subscribers > 50000) return +(3.5 + seed * 2.0).toFixed(1);     // 3.5~5.5%
+  if (subscribers > 10000) return +(4.5 + seed * 2.5).toFixed(1);     // 4.5~7.0%
+  if (subscribers > 1000) return +(6.0 + seed * 3.0).toFixed(1);      // 6.0~9.0%
+  return +(8.0 + seed * 4.0).toFixed(1);
 }
 
 function mapChannelToCreator(r, query) {
@@ -74,7 +78,10 @@ function mapChannelToCreator(r, query) {
 // ─── Main Component ──────────────────────────────────────────
 // (Featured creators are now loaded from API - no hardcoded data)
 
-export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport, isLoggedIn, onLogin, onLogout }) {
+export default function CreatorSearch() {
+  const { user, logout, login, register } = useAuthStore();
+  const isLoggedIn = !!user;
+  const userRole = user?.role || 'free_viewer';
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState('channel');
@@ -348,7 +355,7 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
 
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-        <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-[720px] max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-full max-w-[720px] mx-4 max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
           {/* Header */}
           <div className="p-6 border-b border-dark-600/30 flex items-start justify-between">
             <div className="flex items-center gap-4">
@@ -368,7 +375,7 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
                 <div className="flex gap-3 mt-1 text-xs text-slate-400">
                   <span className="flex items-center gap-1"><Users size={12} /> {creator.subscribers.toLocaleString()}</span>
                   <span className="flex items-center gap-1"><Eye size={12} /> 평균 {creator.avgViews.toLocaleString()}</span>
-                  <span className="flex items-center gap-1"><Activity size={12} /> 참여율 {creator.engagement}%</span>
+                  <span className="flex items-center gap-1"><Activity size={12} /> 참여 ~{Math.round(creator.subscribers * (creator.engagement / 100)).toLocaleString()}명 ({creator.engagement}%)</span>
                 </div>
                 <div className="flex gap-1.5 mt-2">
                   {creator.tags.map((t, i) => (
@@ -451,16 +458,31 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
           {/* Action Buttons */}
           <div className="p-6 pt-3 flex gap-3">
             <button
-              onClick={() => requireAuth(() => { onClose(); onSelectCreator(creator); navigate('/dashboard'); })}
+              onClick={() => requireAuth(() => {
+                onClose();
+                if (creator.channelId) {
+                  navigate(`/marketplace/portfolio/${creator.channelId}`);
+                } else {
+                  navigate(`/analysis?q=${encodeURIComponent(creator.name)}`);
+                }
+              })}
               className="flex-1 py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all flex items-center justify-center gap-2"
             >
-              <Sparkles size={16} /> 이 크리에이터로 분석 시작
+              <Sparkles size={16} /> 크리에이터 분석
             </button>
+            {creator.channelId && (
+              <button
+                onClick={() => { onClose(); navigate(`/marketplace/search?q=${encodeURIComponent(creator.name)}`); }}
+                className="px-5 py-3 rounded-xl text-sm font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+              >
+                <Eye size={16} /> 포트폴리오
+              </button>
+            )}
             <button
               onClick={() => requireAuth(() => { toggleCompare(creator.id); onClose(); })}
-              className="px-6 py-3 rounded-xl text-sm font-medium border border-dark-600 text-slate-300 hover:border-indigo-500/30 transition-all flex items-center gap-2"
+              className="px-5 py-3 rounded-xl text-sm font-medium border border-dark-600 text-slate-300 hover:border-indigo-500/30 transition-all flex items-center gap-2"
             >
-              <ArrowLeftRight size={16} /> {compareList.includes(creator.id) ? '비교 해제' : '비교 추가'}
+              <ArrowLeftRight size={16} /> {compareList.includes(creator.id) ? '해제' : '비교'}
             </button>
           </div>
         </div>
@@ -606,7 +628,7 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
       {/* Login Popup Modal */}
       {showLoginPopup && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLoginPopup(false)}>
-          <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-[420px] shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+          <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-full max-w-[420px] mx-4 shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-dark-600/30 flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">
                 {loginTab === 'login' ? '로그인' : '회원가입'}
@@ -648,33 +670,26 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
                   <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{loginError}</p>
                 )}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!loginEmail.trim() || !loginPassword.trim()) {
                       setLoginError('이메일과 비밀번호를 입력해주세요.');
                       return;
                     }
-                    if (!/\S+@\S+\.\S+/.test(loginEmail)) {
-                      setLoginError('올바른 이메일 형식을 입력해주세요.');
-                      return;
-                    }
-                    const normalizedEmail = loginEmail.trim().toLowerCase();
-                    if (normalizedEmail === 'kangeun1@naver.com') {
-                      if (loginPassword !== 'livedpulse2026') {
-                        setLoginError('비밀번호가 올바르지 않습니다.');
-                        return;
-                      }
-                      onLogin('admin');
-                    } else {
-                      if (loginPassword.length < 6) {
-                        setLoginError('비밀번호는 6자 이상이어야 합니다.');
-                        return;
-                      }
-                      onLogin('user');
-                    }
-                    setShowLoginPopup(false);
-                    setLoginEmail('');
-                    setLoginPassword('');
                     setLoginError('');
+                    try {
+                      if (loginTab === 'login') {
+                        const result = await login(loginEmail.trim(), loginPassword);
+                        if (!result.ok) { setLoginError(result.error || '로그인 실패'); return; }
+                      } else {
+                        const result = await register({ email: loginEmail.trim(), password: loginPassword, name: loginEmail.split('@')[0] });
+                        if (!result.ok) { setLoginError(result.error || '가입 실패'); return; }
+                      }
+                      setShowLoginPopup(false);
+                      setLoginEmail('');
+                      setLoginPassword('');
+                    } catch (e) {
+                      setLoginError(e.message || '서버 오류');
+                    }
                   }}
                   className="w-full py-3 rounded-xl text-sm font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/30 transition-all"
                 >
@@ -700,21 +715,22 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
               <Sparkles size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-tight">LivePulse</h1>
+              <h1 className="text-base font-bold text-white tracking-tight">LivedPulse</h1>
               <p className="text-[10px] text-slate-500">모바일 게임 크리에이터 분석 플랫폼</p>
             </div>
           <nav className="flex items-center gap-1 ml-4 bg-dark-700/60 rounded-lg p-1 border border-dark-600/40">
             <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-all">
               <Search size={13} /> 크리에이터 분석
             </button>
-            {onGoToReport && (
-              <button onClick={() => navigate('/report')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
-                <FileSpreadsheet size={13} /> 방송 리포트
-              </button>
-            )}
-            {onGoToAdmin && (
-              <button onClick={() => requireAuth(() => navigate('/admin'))} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
-                <User size={13} /> 관리콘솔 · 내 정보
+            <button onClick={() => navigate('/report')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+              <FileSpreadsheet size={13} /> 방송 리포트
+            </button>
+            <button onClick={() => navigate('/marketplace')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+              <Target size={13} /> 마켓플레이스
+            </button>
+            {userRole === 'admin' && (
+              <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+                <User size={13} /> 관리콘솔
               </button>
             )}
           </nav>
@@ -723,19 +739,22 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
           <div className="flex items-center gap-2">
             {isLoggedIn ? (
               <>
-                <span className="text-xs text-slate-400 mr-2">환영합니다</span>
-                <button onClick={onLogout}
+                <span className="text-xs text-slate-400 mr-2">{user?.name || user?.email}</span>
+                <button onClick={() => navigate('/admin')} className="px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:border-slate-500 transition-all">
+                  내 정보
+                </button>
+                <button onClick={logout}
                   className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 border border-dark-600 hover:text-white hover:border-slate-500 transition-all">
                   로그아웃
                 </button>
               </>
             ) : (
               <>
-                <button onClick={() => { setLoginTab('login'); setShowLoginPopup(true); }}
+                <button onClick={() => navigate('/login')}
                   className="px-4 py-2 rounded-lg text-xs font-medium text-slate-300 border border-dark-600 hover:text-white hover:border-indigo-500/30 transition-all">
                   로그인
                 </button>
-                <button onClick={() => { setLoginTab('signup'); setShowLoginPopup(true); }}
+                <button onClick={() => navigate('/login')}
                   className="px-4 py-2 rounded-lg text-xs font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:shadow-lg hover:shadow-indigo-500/20 transition-all">
                   회원가입
                 </button>
@@ -859,7 +878,47 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
       {/* ═══ Landing State - Featured Game Creators ═══ */}
       {showLanding && (
         <div className="flex-1">
-          <div className="max-w-[1400px] mx-auto px-6 py-6">
+          {/* ── Marketplace CTA Banner ── */}
+          <div className="max-w-[1400px] mx-auto px-6 pt-6 pb-2">
+            <div
+              onClick={() => navigate('/marketplace')}
+              className="relative overflow-hidden rounded-2xl cursor-pointer group transition-all hover:shadow-xl hover:shadow-indigo-500/10"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/90 via-purple-600/80 to-pink-600/70" />
+              <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M0%2030h60M30%200v60%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.05)%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E')] opacity-40" />
+              <div className="relative flex items-center justify-between px-8 py-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/20 text-white/90 uppercase tracking-wider">New</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 uppercase tracking-wider">Beta</span>
+                  </div>
+                  <h3 className="text-xl font-extrabold text-white mb-1">크리에이터 마켓플레이스</h3>
+                  <p className="text-sm text-white/70 max-w-md">
+                    데이터 기반 포트폴리오 자동 생성 + 광고주-크리에이터 직접 매칭 + 캠페인 성과 검증
+                  </p>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="hidden md:flex gap-4">
+                    {[
+                      { n: '자동 포트폴리오', d: '방송만 하면 생성' },
+                      { n: 'Smart Search', d: 'AI 매칭 추천' },
+                      { n: '성과 검증', d: '배너 노출 자동 체크' },
+                    ].map(f => (
+                      <div key={f.n} className="text-center px-4 py-2 rounded-xl bg-white/10 backdrop-blur-sm">
+                        <div className="text-xs font-bold text-white">{f.n}</div>
+                        <div className="text-[10px] text-white/60 mt-0.5">{f.d}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition shrink-0">
+                    <ArrowRight size={20} className="text-white" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-[1400px] mx-auto px-6 py-4">
             {/* Genre Filter */}
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-xs text-slate-500 mr-1"><Target size={12} className="inline mr-1" />장르</span>
@@ -1012,7 +1071,10 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
                       {compareList.includes(creator.id) ? '비교 선택됨' : '비교 추가'}
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); requireAuth(() => { onSelectCreator(creator); navigate('/dashboard'); }); }}
+                      onClick={(e) => { e.stopPropagation(); requireAuth(() => {
+                        if (creator.channelId) navigate(`/marketplace/portfolio/${creator.channelId}`);
+                        else navigate(`/analysis?q=${encodeURIComponent(creator.name)}`);
+                      }); }}
                       className="text-[10px] px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all flex items-center gap-1">
                       <Sparkles size={10} /> 분석 시작
                     </button>

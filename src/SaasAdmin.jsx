@@ -1,33 +1,29 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LogIn, CreditCard, Settings, LayoutDashboard,
-  ArrowLeft, Sparkles, Wallet, User
+  ArrowLeft, Sparkles, Wallet, User, Store
 } from 'lucide-react';
-import AuthPage from './components/AuthPage';
 import PricingPage from './components/PricingPage';
 import TeamSettingsPage from './components/TeamSettings';
 import SuperAdminPage from './components/SuperAdminPage';
 import PaymentAdminPage from './components/PaymentAdminPage';
+import MarketplaceAdminPage from './components/MarketplaceAdminPage';
 import UserMyPage from './components/UserMyPage';
+import useAuthStore from './store/useAuthStore';
 
-export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLogin, onLogout }) {
-  const [currentPage, setCurrentPage] = useState(() => userRole === 'admin' ? 'admin' : 'pricing');
-  const [viewMode, setViewMode] = useState('admin'); // 'admin' | 'user'
-
-  useEffect(() => {
-    if (isLoggedIn && userRole === 'admin' && currentPage === 'pricing') {
-      setCurrentPage('admin');
-    }
-  }, [isLoggedIn, userRole]);
-
-  if (!isLoggedIn) {
-    return <AuthPage onLogin={(role) => { onLogin(role); }} />;
-  }
-
+export default function SaasAdmin() {
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
+  const userRole = user?.role || 'free_viewer';
   const isAdmin = userRole === 'admin';
+
+  const [currentPage, setCurrentPage] = useState(() => isAdmin ? 'admin' : 'mypage');
+  const [viewMode, setViewMode] = useState('admin'); // 'admin' | 'user'
 
   const adminNavItems = [
     { id: 'admin', label: '대시보드', icon: LayoutDashboard },
+    { id: 'marketplace', label: '마켓플레이스', icon: Store },
     { id: 'payments', label: '결제 관리', icon: Wallet },
     { id: 'pricing', label: '요금제 관리', icon: CreditCard },
     { id: 'settings', label: '워크스페이스', icon: Settings },
@@ -51,7 +47,7 @@ export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLog
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <Sparkles size={11} className="text-white" />
           </div>
-          <span className="text-xs font-bold text-white">LivePulse</span>
+          <span className="text-xs font-bold text-white">LivedPulse</span>
           {isAdmin && (
             <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">ADMIN</span>
           )}
@@ -94,7 +90,7 @@ export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLog
           </div>
           <span className="text-[10px] text-slate-400">{isAdmin ? '시스템 관리자' : '사용자'}</span>
           <button
-            onClick={onLogout}
+            onClick={logout}
             className="p-1 rounded hover:bg-[#374766]/30 transition-colors"
             title="로그아웃"
           >
@@ -130,7 +126,7 @@ export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLog
 
             <div className="p-3 border-t border-[#374766]/30">
               <button
-                onClick={onGoToDashboard}
+                onClick={() => navigate('/')}
                 className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs text-indigo-400 hover:bg-indigo-500/10 transition-colors"
               >
                 <ArrowLeft size={14} />
@@ -143,7 +139,14 @@ export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLog
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
           {showUserView ? (
-            <UserMyPage />
+            <div>
+              <div className="p-4 border-b border-[#374766]/30">
+                <button onClick={() => navigate('/')} className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition">
+                  <ArrowLeft size={14} /> 홈으로 돌아가기
+                </button>
+              </div>
+              <UserMyPage />
+            </div>
           ) : (
             <>
               {currentPage === 'pricing' && (
@@ -151,6 +154,7 @@ export default function SaasAdmin({ onGoToDashboard, isLoggedIn, userRole, onLog
               )}
               {currentPage === 'settings' && <TeamSettingsPage />}
               {currentPage === 'admin' && <SuperAdminPage />}
+              {currentPage === 'marketplace' && <MarketplaceAdminPage />}
               {currentPage === 'payments' && <PaymentAdminPage />}
             </>
           )}

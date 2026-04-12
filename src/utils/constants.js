@@ -67,7 +67,20 @@ export const NEGATIVE_SENTIMENT_WORDS = ['ㅡㅡ', 'ㅠㅠ', 'ㅜㅜ', '아쉽',
 
 export const PROFANITY_WORDS = ['시발', 'ㅅㅂ', '병신', 'ㅄ', '개새', 'ㅗ', '존나', 'ㅈㄴ'];
 
-export const SUGGESTION_WORDS = ['건의', '요청', '제안', '바꿔', '고쳐', '추가해', '부탁', '해주세요', '해줘', '해주삼', '좀', '언제', '왜 안', '개선', '불편', '문제점', '아쉬운', '아쉽', '바라', '원해', '희망', '필요', '~좀', '제발', '이거 좀', '저거 좀', '만들어', '넣어', '수정'];
+// ★ 건의사항 키워드: 게임/콘텐츠 관련만 포함. 개인 소통 요청("캠켜줘", "디코 들어와줘") 제외
+export const SUGGESTION_WORDS = ['건의', '요청', '제안', '고쳐', '추가해', '개선', '불편', '문제점', '아쉬운', '아쉽', '필요', '만들어', '넣어', '수정', '패치해', '버그', '오류', '밸런스'];
+
+// ★ 개인 소통 키워드 (게임과 무관한 스트리머-시청자 소통)
+export const PERSONAL_CHAT_WORDS = [
+  '디코', '디스코드', '인스타', '트위터', '캠', '마이크', '화면', '음량',
+  '노래', '틀어', '브금', '구독', '팔로우', '좋아요', '알림', '벨',
+  '몇살', '나이', '얼굴', '실물', '목소리', '잘생', '예쁘', '귀여',
+  '커플', '여친', '남친', '생일', '인사', '안녕', '하이', '바이',
+  '식사', '밥', '간식', '치킨', '피자', '야식', '커피',
+  '잠', '피곤', '쉬어', '자러', '출근', '퇴근', '학교',
+  '카톡', '번호', 'SNS', '페북', '유튜브', '쇼츠',
+  '웃겨', '레알', 'ㄹㅇ', 'ㅎㅇ', 'ㅂㅂ',
+];
 
 // ── 봇/Nightbot 필터링 ──
 export const BOT_NAMES = [
@@ -105,15 +118,42 @@ export function isBotMessage(line) {
   return false;
 }
 
-// 게임 관련 채팅인지 판단 (GAME_CATS + ACTIVITY_CATS 키워드 기반)
-export function isGameRelatedChat(line) {
+// ★ 개인 소통인지 판단
+export function isPersonalChat(line) {
   const lower = line.toLowerCase();
+  return PERSONAL_CHAT_WORDS.some(w => lower.includes(w));
+}
+
+// ★ 게임 키워드가 명시적으로 포함된 채팅 (정밀 매칭)
+export function hasExplicitGameKeyword(line) {
+  const lower = line.toLowerCase();
+  const gameActivityCats = Object.entries(ACTIVITY_CATS)
+    .filter(([name]) => name !== '소통/잡담')
+    .map(([, words]) => words)
+    .flat();
   const allGameWords = [
     ...Object.values(GAME_CATS).flat(),
-    ...Object.values(ACTIVITY_CATS).flat(),
+    ...gameActivityCats,
     ...Object.values(NEGATIVE_KW).flat(),
   ];
   return allGameWords.some(w => lower.includes(w.toLowerCase()));
+}
+
+// ★ 게임 관련 채팅인지 판단 (역발상: 개인 소통/잡담이 아니면 게임 맥락으로 간주)
+// 게임 방송 채팅에서 "ㅋㅋㅋ", "대박", "ㄷㄷ" 등은 게임 반응임
+export function isGameRelatedChat(line) {
+  if (isPersonalChat(line)) return false;
+  // 봇 메시지도 제외
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length < 2) return false;
+  // 명시적 게임 키워드가 있으면 확실히 게임 관련
+  if (hasExplicitGameKeyword(line)) return true;
+  // 감정 표현/리액션은 게임 맥락으로 간주 (게임 방송 중 나온 반응이므로)
+  const lower = line.toLowerCase();
+  const reactionWords = ['ㅋㅋ', 'ㄷㄷ', 'ㅎㅎ', 'ㅠㅠ', 'ㅜㅜ', '와', '오오', '대박', '미쳤', '레전드', 'gg', 'ㄱㄱ', '가즈아', '갑시다', '축하', '짱', '굿', '최고'];
+  if (reactionWords.some(w => lower.includes(w))) return true;
+  // 2글자 이상이고 개인 소통이 아니면 게임 맥락
+  return trimmed.length >= 3;
 }
 
 export const WORKFLOW_STEPS = [
