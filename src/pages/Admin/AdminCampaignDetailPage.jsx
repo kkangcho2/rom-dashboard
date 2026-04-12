@@ -42,7 +42,7 @@ export default function AdminCampaignDetailPage({ campaignId, onNavigate }) {
   const [campaign, setCampaign] = useState(null);
   const [creators, setCreators] = useState([]);
   const [streams, setStreams] = useState([]);
-  const [reports, setReports] = useState({ reports: [], emails: [] });
+  const [reports, setReports] = useState({ verificationReports: [], deliveryReports: [], emails: [] });
   const [jobs, setJobs] = useState([]);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -164,8 +164,9 @@ export default function AdminCampaignDetailPage({ campaignId, onNavigate }) {
       )}
       {tab === 'reports' && (
         <ReportsTab
-          reports={reports.reports}
-          emails={reports.emails}
+          verificationReports={reports.verificationReports || []}
+          deliveryReports={reports.deliveryReports || []}
+          emails={reports.emails || []}
           onRegen={handleRegenReport}
           onResend={handleResendEmail}
         />
@@ -365,7 +366,7 @@ function StreamsTab({ streams, onScan, onForceMatch, onExclude, onRematch }) {
 }
 
 // ─── Tab D: 리포트 ──────────────────────────────────────────────
-function ReportsTab({ reports, emails, onRegen, onResend }) {
+function ReportsTab({ verificationReports, deliveryReports, emails, onRegen, onResend }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
@@ -377,14 +378,64 @@ function ReportsTab({ reports, emails, onRegen, onResend }) {
         </button>
       </div>
 
-      {/* Reports */}
+      {/* 검증 리포트 (기존 데이터) */}
       <GlassCard className="p-5">
-        <h3 className="text-sm font-bold text-white mb-3">배송 리포트</h3>
-        {reports.length === 0 ? (
-          <div className="text-center py-6 text-slate-500 text-xs">리포트가 없습니다</div>
+        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          <FileText size={14} className="text-emerald-400" /> 검증 리포트
+          <span className="text-[10px] text-slate-500 font-normal">({verificationReports.length}건)</span>
+        </h3>
+        {verificationReports.length === 0 ? (
+          <div className="text-center py-6 text-slate-500 text-xs">검증 리포트가 없습니다</div>
         ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 text-[10px] uppercase border-b border-[#374766]/20">
+                  <th className="text-left py-2 px-2">크리에이터</th>
+                  <th className="text-center py-2 px-2">방송시간</th>
+                  <th className="text-center py-2 px-2">배너노출</th>
+                  <th className="text-center py-2 px-2">노출률</th>
+                  <th className="text-center py-2 px-2">평균시청</th>
+                  <th className="text-center py-2 px-2">최대시청</th>
+                  <th className="text-center py-2 px-2">임프레션</th>
+                  <th className="text-center py-2 px-2">상태</th>
+                  <th className="text-left py-2 px-2">생성일</th>
+                </tr>
+              </thead>
+              <tbody>
+                {verificationReports.map(r => (
+                  <tr key={r.id} className="border-b border-[#374766]/10 hover:bg-[#1a2035]/50">
+                    <td className="py-2.5 px-2 text-white">{r.creator_name || '-'}</td>
+                    <td className="py-2.5 px-2 text-center text-slate-300">{r.total_stream_minutes || 0}분</td>
+                    <td className="py-2.5 px-2 text-center text-slate-300">{r.banner_exposed_minutes || 0}분</td>
+                    <td className="py-2.5 px-2 text-center">
+                      <span className={`font-bold ${(r.exposure_rate || 0) > 0.5 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {((r.exposure_rate || 0) * 100).toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-2 text-center text-slate-300">{(r.avg_viewers_during || 0).toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-center text-indigo-400 font-bold">{(r.peak_viewers || 0).toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-center text-slate-300">{(r.total_impressions || 0).toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-center">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.status === 'generating' ? 'bg-emerald-500/20 text-emerald-400' : r.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-2 text-slate-500 text-[10px]">{formatDate(r.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+
+      {/* 배송 리포트 (자동화) */}
+      {deliveryReports.length > 0 && (
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-3">배송 리포트 (자동화)</h3>
           <div className="space-y-2">
-            {reports.map(r => (
+            {deliveryReports.map(r => (
               <div key={r.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
                 <FileText size={14} className={r.status === 'completed' ? 'text-emerald-400' : r.status === 'failed' ? 'text-red-400' : 'text-amber-400'} />
                 <span className="text-xs text-white">리포트 #{r.id}</span>
@@ -395,12 +446,15 @@ function ReportsTab({ reports, emails, onRegen, onResend }) {
               </div>
             ))}
           </div>
-        )}
-      </GlassCard>
+        </GlassCard>
+      )}
 
-      {/* Emails */}
+      {/* 이메일 발송 이력 */}
       <GlassCard className="p-5">
-        <h3 className="text-sm font-bold text-white mb-3">이메일 발송 이력</h3>
+        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          <Mail size={14} className="text-amber-400" /> 이메일 발송 이력
+          <span className="text-[10px] text-slate-500 font-normal">({emails.length}건)</span>
+        </h3>
         {emails.length === 0 ? (
           <div className="text-center py-6 text-slate-500 text-xs">발송 기록이 없습니다</div>
         ) : (
@@ -410,21 +464,25 @@ function ReportsTab({ reports, emails, onRegen, onResend }) {
                 <tr className="text-slate-500 text-[10px] uppercase border-b border-[#374766]/20">
                   <th className="text-left py-2 px-2">수신자</th>
                   <th className="text-left py-2 px-2">제목</th>
-                  <th className="text-left py-2 px-2">상태</th>
-                  <th className="text-left py-2 px-2">시각</th>
+                  <th className="text-center py-2 px-2">상태</th>
+                  <th className="text-center py-2 px-2">시도</th>
+                  <th className="text-left py-2 px-2">발송일</th>
+                  <th className="text-left py-2 px-2">오류</th>
                 </tr>
               </thead>
               <tbody>
                 {emails.map(e => (
                   <tr key={e.id} className="border-b border-[#374766]/10">
                     <td className="py-2 px-2 text-slate-300">{e.recipient_email}</td>
-                    <td className="py-2 px-2 text-slate-400">{e.subject}</td>
-                    <td className="py-2 px-2">
-                      <span className={`text-[10px] ${e.status === 'sent' ? 'text-emerald-400' : e.status === 'failed' ? 'text-red-400' : 'text-amber-400'}`}>
+                    <td className="py-2 px-2 text-slate-400 max-w-[200px] truncate">{e.subject}</td>
+                    <td className="py-2 px-2 text-center">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${e.status === 'sent' ? 'bg-emerald-500/20 text-emerald-400' : e.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>
                         {e.status}
                       </span>
                     </td>
+                    <td className="py-2 px-2 text-center text-slate-400">{e.attempts}</td>
                     <td className="py-2 px-2 text-slate-500 text-[10px]">{formatDate(e.sent_at || e.created_at)}</td>
+                    <td className="py-2 px-2 text-red-400 text-[10px] truncate max-w-[150px]">{e.error_message || '-'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -72,6 +72,46 @@ module.exports = function (db) {
       // 오케스트레이터 상태
       const orchStatus = orchestrator.getStatus();
 
+      // 전체 테이블 데이터 카운트 (운영 현황)
+      const tableCounts = {};
+      const countTables = [
+        'campaigns', 'campaign_creators', 'creator_profiles',
+        'verification_reports', 'banner_verifications',
+        'videos', 'transcripts', 'chat_messages',
+        'delivery_reports', 'email_deliveries', 'job_queue',
+        'stream_sessions', 'campaign_broadcast_matches', 'review_queue',
+        'notifications', 'audit_logs'
+      ];
+      for (const t of countTables) {
+        try {
+          tableCounts[t] = db.prepare(`SELECT COUNT(*) as cnt FROM ${t}`).get().cnt;
+        } catch { tableCounts[t] = 0; }
+      }
+
+      // 검증 리포트 통계
+      const verificationReportStats = {
+        total: tableCounts.verification_reports,
+        generating: 0, completed: 0, failed: 0,
+      };
+      try {
+        const vrByStatus = db.prepare("SELECT status, COUNT(*) as cnt FROM verification_reports GROUP BY status").all();
+        for (const r of vrByStatus) verificationReportStats[r.status] = r.cnt;
+      } catch {}
+
+      // 이메일 발송 통계
+      const emailStats = { total: tableCounts.email_deliveries, sent: 0, pending: 0, failed: 0 };
+      try {
+        const emailByStatus = db.prepare("SELECT status, COUNT(*) as cnt FROM email_deliveries GROUP BY status").all();
+        for (const r of emailByStatus) emailStats[r.status] = r.cnt;
+      } catch {}
+
+      // 캠페인 상태 분포
+      const campaignsByState = {};
+      try {
+        const stateRows = db.prepare("SELECT state, COUNT(*) as cnt FROM campaigns GROUP BY state").all();
+        for (const r of stateRows) campaignsByState[r.state] = r.cnt;
+      } catch {}
+
       res.json({
         ok: true,
         data: {
@@ -87,6 +127,10 @@ module.exports = function (db) {
           recentFailedJobs,
           recentCampaigns,
           orchestrator: orchStatus,
+          tableCounts,
+          verificationReportStats,
+          emailStats,
+          campaignsByState,
         },
       });
     } catch (err) {
@@ -189,18 +233,30 @@ module.exports = function (db) {
     }
   });
 
-  // 캠페인별 리포트
+  // 캠페인별 리포트 (기존 verification + 신규 delivery + 이메일)
   router.get('/campaigns/:id/reports', (req, res) => {
     try {
-      const reports = db.prepare(`
+      // 기존 검증 리포트
+      const verificationReports = db.prepare(`
+        SELECT vr.*, cp.display_name as creator_name
+        FROM verification_reports vr
+        LEFT JOIN campaign_creators cc ON cc.id = vr.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE vr.campaign_id = ?
+        ORDER BY vr.created_at DESC
+      `).all(req.params.id);
+
+      // 신규 배송 리포트
+      const deliveryReports = db.prepare(`
         SELECT * FROM delivery_reports WHERE campaign_id = ? ORDER BY created_at DESC
       `).all(req.params.id);
 
+      // 이메일 발송 내역
       const emails = db.prepare(`
         SELECT * FROM email_deliveries WHERE campaign_id = ? ORDER BY created_at DESC
       `).all(req.params.id);
 
-      res.json({ ok: true, reports, emails });
+      res.json({ ok: true, verificationReports, deliveryReports, emails });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -488,7 +544,7 @@ module.exports = function (db) {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  //  리포트 센터
+  //  리포트 센터 (기존 verification_reports + 신규 delivery_reports 통합)
   // ═══════════════════════════════════════════════════════════════
 
   router.get('/reports', (req, res) => {
@@ -497,21 +553,65 @@ module.exports = function (db) {
       const limit = Math.min(50, parseInt(req.query.limit) || 20);
       const offset = (page - 1) * limit;
 
-      const total = db.prepare('SELECT COUNT(*) as cnt FROM delivery_reports').get().cnt;
+      // 기존 검증 리포트 (verification_reports) — 실제 데이터가 여기에 있음
+      const vrTotal = db.prepare('SELECT COUNT(*) as cnt FROM verification_reports').get().cnt;
+      const verificationReports = db.prepare(`
+        SELECT vr.id, vr.campaign_id, vr.campaign_creator_id,
+               vr.total_stream_minutes, vr.banner_exposed_minutes, vr.exposure_rate,
+               vr.avg_viewers_during, vr.peak_viewers, vr.total_impressions,
+               vr.engagement_summary, vr.sentiment_summary, vr.report_data,
+               vr.pdf_url, vr.web_url, vr.status, vr.created_at,
+               c.title as campaign_title, c.brand_name, c.target_game,
+               cp.display_name as creator_name
+        FROM verification_reports vr
+        LEFT JOIN campaigns c ON c.id = vr.campaign_id
+        LEFT JOIN campaign_creators cc ON cc.id = vr.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        ORDER BY vr.created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(limit, offset);
 
-      const reports = db.prepare(`
+      // 신규 배송 리포트 (delivery_reports) — 자동화 파이프라인용
+      const drTotal = db.prepare('SELECT COUNT(*) as cnt FROM delivery_reports').get().cnt;
+      const deliveryReports = db.prepare(`
         SELECT dr.*, c.title as campaign_title, c.brand_name, c.target_game
         FROM delivery_reports dr
         LEFT JOIN campaigns c ON c.id = dr.campaign_id
         ORDER BY dr.created_at DESC
-        LIMIT ? OFFSET ?
-      `).all(limit, offset);
+        LIMIT ?
+      `).all(limit);
 
       res.json({
         ok: true,
-        reports,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        verificationReports,
+        deliveryReports,
+        pagination: { page, limit, total: vrTotal, totalPages: Math.ceil(vrTotal / limit) },
+        counts: { verification: vrTotal, delivery: drTotal },
       });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 리포트 상세 (verification_report)
+  router.get('/reports/verification/:id', (req, res) => {
+    try {
+      const report = db.prepare(`
+        SELECT vr.*,
+               c.title as campaign_title, c.brand_name, c.target_game,
+               c.campaign_start_date, c.campaign_end_date,
+               cp.display_name as creator_name, cp.youtube_channel_id,
+               cp.chzzk_channel_id, cp.afreeca_channel_id
+        FROM verification_reports vr
+        LEFT JOIN campaigns c ON c.id = vr.campaign_id
+        LEFT JOIN campaign_creators cc ON cc.id = vr.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE vr.id = ?
+      `).get(req.params.id);
+
+      if (!report) return res.status(404).json({ error: '리포트 없음' });
+
+      res.json({ ok: true, report });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

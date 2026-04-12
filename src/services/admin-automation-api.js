@@ -64,6 +64,7 @@ export const getReports = (params = {}) => {
   const q = new URLSearchParams(params).toString();
   return fetchJson(`/reports${q ? `?${q}` : ''}`);
 };
+export const getReportDetail = (id) => fetchJson(`/reports/verification/${id}`);
 export const regenerateReport = (campaignId) => post(`/reports/${campaignId}/regenerate`);
 
 // ─── Emails ─────────────────────────────────────────────────

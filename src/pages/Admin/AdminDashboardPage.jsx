@@ -47,7 +47,7 @@ export default function AdminDashboardPage({ onNavigate }) {
   }
   if (!data) return null;
 
-  const { kpi, queueStats, recentFailedJobs, recentCampaigns, orchestrator } = data;
+  const { kpi, queueStats, recentFailedJobs, recentCampaigns, orchestrator, tableCounts, verificationReportStats, emailStats, campaignsByState } = data;
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px]">
@@ -204,6 +204,121 @@ export default function AdminDashboardPage({ onNavigate }) {
           >
             작업 큐 전체 보기 →
           </button>
+        </GlassCard>
+      )}
+
+      {/* 리포트 & 이메일 현황 + 캠페인 상태 분포 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* 리포트 현황 */}
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <FileText size={14} className="text-emerald-400" /> 검증 리포트 현황
+          </h3>
+          {verificationReportStats ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">전체 리포트</span>
+                <span className="text-sm font-bold text-white">{verificationReportStats.total}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">완료</span>
+                <span className="text-sm font-bold text-emerald-400">{verificationReportStats.completed || 0}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">생성중</span>
+                <span className="text-sm font-bold text-cyan-400">{verificationReportStats.generating || 0}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">실패</span>
+                <span className="text-sm font-bold text-red-400">{verificationReportStats.failed || 0}</span>
+              </div>
+            </div>
+          ) : <div className="text-[10px] text-slate-500">데이터 없음</div>}
+          <button onClick={() => onNavigate?.('report-center')} className="mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 transition">
+            리포트 센터 →
+          </button>
+        </GlassCard>
+
+        {/* 이메일 현황 */}
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <Mail size={14} className="text-amber-400" /> 이메일 발송 현황
+          </h3>
+          {emailStats ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">전체 발송</span>
+                <span className="text-sm font-bold text-white">{emailStats.total}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">발송 완료</span>
+                <span className="text-sm font-bold text-emerald-400">{emailStats.sent || 0}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">대기중</span>
+                <span className="text-sm font-bold text-amber-400">{emailStats.pending || 0}</span>
+              </div>
+              <div className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                <span className="text-[10px] text-slate-400">실패</span>
+                <span className="text-sm font-bold text-red-400">{emailStats.failed || 0}</span>
+              </div>
+            </div>
+          ) : <div className="text-[10px] text-slate-500">데이터 없음</div>}
+          <button onClick={() => onNavigate?.('email-delivery')} className="mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 transition">
+            이메일 발송 관리 →
+          </button>
+        </GlassCard>
+
+        {/* 캠페인 상태 분포 */}
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <Megaphone size={14} className="text-indigo-400" /> 캠페인 상태 분포
+          </h3>
+          {campaignsByState && Object.keys(campaignsByState).length > 0 ? (
+            <div className="space-y-1.5">
+              {Object.entries(campaignsByState).map(([state, count]) => (
+                <div key={state} className="flex items-center justify-between px-2 py-1.5 rounded bg-[#0a0e1a]/50">
+                  <span className={`text-[10px] font-medium ${STATE_COLORS[state] || 'text-slate-400'}`}>
+                    {STATE_LABELS[state] || state}
+                  </span>
+                  <span className="text-sm font-bold text-white">{count}</span>
+                </div>
+              ))}
+            </div>
+          ) : <div className="text-[10px] text-slate-500">캠페인 없음</div>}
+          <button onClick={() => onNavigate?.('campaigns')} className="mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 transition">
+            캠페인 관리 →
+          </button>
+        </GlassCard>
+      </div>
+
+      {/* 데이터 테이블 현황 */}
+      {tableCounts && (
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <Server size={14} className="text-slate-400" /> 시스템 데이터 현황
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+            {[
+              { key: 'campaigns', label: '캠페인' },
+              { key: 'campaign_creators', label: '계약 크리에이터' },
+              { key: 'creator_profiles', label: '크리에이터' },
+              { key: 'verification_reports', label: '검증 리포트' },
+              { key: 'banner_verifications', label: '배너 검증' },
+              { key: 'videos', label: '수집 영상' },
+              { key: 'transcripts', label: '자막' },
+              { key: 'chat_messages', label: '채팅 메시지' },
+              { key: 'stream_sessions', label: '감지 방송' },
+              { key: 'campaign_broadcast_matches', label: '방송 매칭' },
+              { key: 'notifications', label: '알림' },
+              { key: 'audit_logs', label: '감사 로그' },
+            ].map(t => (
+              <div key={t.key} className="text-center p-2 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/10">
+                <div className="text-sm font-bold text-white">{tableCounts[t.key] ?? 0}</div>
+                <div className="text-[8px] text-slate-500 mt-0.5">{t.label}</div>
+              </div>
+            ))}
+          </div>
         </GlassCard>
       )}
 
