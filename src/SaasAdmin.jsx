@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LogIn, CreditCard, Settings, LayoutDashboard,
-  ArrowLeft, Sparkles, Wallet, User, Store
+  ArrowLeft, Sparkles, Wallet, User, Store,
+  Activity, Megaphone, Eye, Monitor, FileText, Server, Mail
 } from 'lucide-react';
 import PricingPage from './components/PricingPage';
 import TeamSettingsPage from './components/TeamSettings';
@@ -10,6 +11,16 @@ import SuperAdminPage from './components/SuperAdminPage';
 import PaymentAdminPage from './components/PaymentAdminPage';
 import MarketplaceAdminPage from './components/MarketplaceAdminPage';
 import UserMyPage from './components/UserMyPage';
+import {
+  AdminDashboardPage,
+  AdminCampaignListPage,
+  AdminCampaignDetailPage,
+  AdminReviewQueuePage,
+  AdminJobQueuePage,
+  AdminStreamMonitorPage,
+  AdminReportCenterPage,
+  AdminEmailDeliveryPage,
+} from './pages/Admin';
 import useAuthStore from './store/useAuthStore';
 
 export default function SaasAdmin() {
@@ -18,15 +29,31 @@ export default function SaasAdmin() {
   const userRole = user?.role || 'free_viewer';
   const isAdmin = userRole === 'admin';
 
-  const [currentPage, setCurrentPage] = useState(() => isAdmin ? 'admin' : 'mypage');
+  const [currentPage, setCurrentPage] = useState(() => isAdmin ? 'automation-dashboard' : 'mypage');
   const [viewMode, setViewMode] = useState('admin'); // 'admin' | 'user'
+  const [pageParams, setPageParams] = useState({});
+
+  // Navigation handler for child pages
+  const handleNavigate = useCallback((pageId, params = {}) => {
+    setCurrentPage(pageId);
+    setPageParams(params);
+  }, []);
 
   const adminNavItems = [
-    { id: 'admin', label: '대시보드', icon: LayoutDashboard },
-    { id: 'marketplace', label: '마켓플레이스', icon: Store },
-    { id: 'payments', label: '결제 관리', icon: Wallet },
-    { id: 'pricing', label: '요금제 관리', icon: CreditCard },
-    { id: 'settings', label: '워크스페이스', icon: Settings },
+    // ─── 캠페인 자동화 (운영 관제) ───
+    { id: 'automation-dashboard', label: '운영 관제실', icon: Activity, group: 'automation' },
+    { id: 'campaigns', label: '캠페인', icon: Megaphone, group: 'automation' },
+    { id: 'stream-monitor', label: '방송 모니터링', icon: Monitor, group: 'automation' },
+    { id: 'review-queue', label: '검수 큐', icon: Eye, group: 'automation' },
+    { id: 'report-center', label: '리포트 센터', icon: FileText, group: 'automation' },
+    { id: 'job-queue', label: '작업 큐', icon: Server, group: 'automation' },
+    { id: 'email-delivery', label: '이메일 발송', icon: Mail, group: 'automation' },
+    // ─── 기존 관리 ───
+    { id: 'admin', label: '유저 관리', icon: LayoutDashboard, group: 'system' },
+    { id: 'marketplace', label: '마켓플레이스', icon: Store, group: 'system' },
+    { id: 'payments', label: '결제 관리', icon: Wallet, group: 'system' },
+    { id: 'pricing', label: '요금제 관리', icon: CreditCard, group: 'system' },
+    { id: 'settings', label: '워크스페이스', icon: Settings, group: 'system' },
   ];
 
   const userNavItems = [
@@ -37,6 +64,11 @@ export default function SaasAdmin() {
   // 유저 뷰 모드일 때는 UserMyPage 전체 렌더
   const showUserView = viewMode === 'user';
   const navItems = showUserView ? userNavItems : (isAdmin ? adminNavItems : userNavItems);
+
+  // Group nav items
+  const automationItems = navItems.filter(i => i.group === 'automation');
+  const systemItems = navItems.filter(i => i.group === 'system');
+  const ungrouped = navItems.filter(i => !i.group);
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] flex flex-col">
@@ -101,16 +133,66 @@ export default function SaasAdmin() {
 
       {/* ── Body ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar — 유저 뷰일 때는 숨김 (UserMyPage 내부 사이드바 사용) */}
+        {/* Sidebar — 유저 뷰일 때는 숨김 */}
         {!showUserView && (
-          <aside className="w-[220px] min-w-[220px] border-r border-[#374766]/30 bg-[#111827]/50 flex flex-col">
-            <nav className="flex-1 p-3 space-y-1 pt-4">
-              {navItems.map(item => {
+          <aside className="w-[220px] min-w-[220px] border-r border-[#374766]/30 bg-[#111827]/50 flex flex-col overflow-y-auto">
+            <nav className="flex-1 p-3 space-y-0.5 pt-4">
+              {/* Automation group */}
+              {automationItems.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-[9px] font-bold text-slate-600 uppercase tracking-wider">캠페인 운영</div>
+                  {automationItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id || (item.id === 'campaigns' && currentPage === 'campaign-detail');
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          isActive
+                            ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/20'
+                            : 'text-slate-400 hover:bg-[#1a2035] hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon size={14} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* System group */}
+              {systemItems.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 mt-4 text-[9px] font-bold text-slate-600 uppercase tracking-wider">시스템 관리</div>
+                  {systemItems.map(item => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          currentPage === item.id
+                            ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/20'
+                            : 'text-slate-400 hover:bg-[#1a2035] hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon size={14} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* Ungrouped (user view) */}
+              {ungrouped.map(item => {
                 const Icon = item.icon;
                 return (
                   <button
                     key={item.id}
-                    onClick={() => setCurrentPage(item.id)}
+                    onClick={() => handleNavigate(item.id)}
                     className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
                       currentPage === item.id
                         ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/20'
@@ -149,9 +231,18 @@ export default function SaasAdmin() {
             </div>
           ) : (
             <>
-              {currentPage === 'pricing' && (
-                <PricingPage onSelectPlan={() => setCurrentPage('settings')} />
-              )}
+              {/* ─── 캠페인 자동화 페이지 ─── */}
+              {currentPage === 'automation-dashboard' && <AdminDashboardPage onNavigate={handleNavigate} />}
+              {currentPage === 'campaigns' && <AdminCampaignListPage onNavigate={handleNavigate} />}
+              {currentPage === 'campaign-detail' && <AdminCampaignDetailPage campaignId={pageParams.campaignId} onNavigate={handleNavigate} />}
+              {currentPage === 'review-queue' && <AdminReviewQueuePage onNavigate={handleNavigate} />}
+              {currentPage === 'job-queue' && <AdminJobQueuePage />}
+              {currentPage === 'stream-monitor' && <AdminStreamMonitorPage onNavigate={handleNavigate} />}
+              {currentPage === 'report-center' && <AdminReportCenterPage onNavigate={handleNavigate} />}
+              {currentPage === 'email-delivery' && <AdminEmailDeliveryPage />}
+
+              {/* ─── 기존 관리 페이지 ─── */}
+              {currentPage === 'pricing' && <PricingPage onSelectPlan={() => handleNavigate('settings')} />}
               {currentPage === 'settings' && <TeamSettingsPage />}
               {currentPage === 'admin' && <SuperAdminPage />}
               {currentPage === 'marketplace' && <MarketplaceAdminPage />}

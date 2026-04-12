@@ -23,6 +23,9 @@ function isValidTransition(from, to) {
   return STATE_TRANSITIONS[from]?.includes(to) || false;
 }
 
+// ─── 자동화 훅 (Phase 1) ──────────────────────────────────────
+const campaignHooks = require('../../services/campaign-hooks.cjs');
+
 function campaignRoutes(db) {
   const router = express.Router();
 
@@ -225,6 +228,17 @@ function campaignRoutes(db) {
           campaign.id
         );
       }
+    }
+
+    // ─── 자동화 훅: 상태 변화 시 잡 생성 ──────────────────────
+    try {
+      campaignHooks.onCampaignStateChange({
+        campaignId: campaign.id,
+        fromState: campaign.state,
+        toState: newState,
+      });
+    } catch (hookErr) {
+      console.error('[CampaignRoute] Hook error (non-blocking):', hookErr.message);
     }
 
     res.json({ success: true, state: newState });

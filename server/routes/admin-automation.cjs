@@ -1,0 +1,626 @@
+'use strict';
+
+/**
+ * admin-automation.cjs — Admin API routes for campaign automation system.
+ * Provides endpoints for dashboard, job queue, review queue, stream monitoring,
+ * reports, and email delivery management.
+ */
+
+const express = require('express');
+
+module.exports = function (db) {
+  const router = express.Router();
+
+  const jobQueue = require('../services/job-queue.cjs');
+  const orchestrator = require('../services/campaign-orchestrator.cjs');
+  const reviewQueueService = require('../services/review-queue.cjs');
+
+  // ═══════════════════════════════════════════════════════════════
+  //  대시보드
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/dashboard', (req, res) => {
+    try {
+      // 진행 중 캠페인
+      const activeCampaigns = db.prepare(
+        "SELECT COUNT(*) as count FROM campaigns WHERE state IN ('confirmed','live')"
+      ).get().count;
+
+      // 오늘 감지된 방송
+      const today = new Date().toISOString().slice(0, 10);
+      const todayStreams = db.prepare(
+        "SELECT COUNT(*) as count FROM stream_sessions WHERE date(discovered_at) = ?"
+      ).get(today).count;
+
+      // 매칭 성공 수
+      const matchedCount = db.prepare(
+        "SELECT COUNT(*) as count FROM campaign_broadcast_matches WHERE status = 'matched'"
+      ).get().count;
+
+      // 검수 대기
+      const reviewPending = db.prepare(
+        "SELECT COUNT(*) as count FROM review_queue WHERE status = 'pending'"
+      ).get().count;
+
+      // 리포트 실패
+      const reportFailed = db.prepare(
+        "SELECT COUNT(*) as count FROM delivery_reports WHERE status = 'failed'"
+      ).get().count;
+
+      // 이메일 실패
+      const emailFailed = db.prepare(
+        "SELECT COUNT(*) as count FROM email_deliveries WHERE status = 'failed'"
+      ).get().count;
+
+      // 잡 큐 상태
+      const queueStats = jobQueue.getStats();
+
+      // 최근 실패 잡
+      const recentFailedJobs = db.prepare(`
+        SELECT id, job_type, attempts, max_attempts, created_at, updated_at
+        FROM job_queue WHERE status = 'failed'
+        ORDER BY updated_at DESC LIMIT 5
+      `).all();
+
+      // 최근 캠페인 상태 변화
+      const recentCampaigns = db.prepare(`
+        SELECT id, title, state, brand_name, target_game, updated_at
+        FROM campaigns
+        ORDER BY updated_at DESC LIMIT 10
+      `).all();
+
+      // 오케스트레이터 상태
+      const orchStatus = orchestrator.getStatus();
+
+      res.json({
+        ok: true,
+        data: {
+          kpi: {
+            activeCampaigns,
+            todayStreams,
+            matchedCount,
+            reviewPending,
+            reportFailed,
+            emailFailed,
+          },
+          queueStats,
+          recentFailedJobs,
+          recentCampaigns,
+          orchestrator: orchStatus,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  캠페인 목록 (자동화 관점)
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/campaigns', (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+      const state = req.query.state || '';
+
+      let where = '';
+      const params = [];
+      if (state) {
+        where = 'WHERE c.state = ?';
+        params.push(state);
+      }
+
+      const total = db.prepare(`SELECT COUNT(*) as cnt FROM campaigns c ${where}`).get(...params).cnt;
+
+      const campaigns = db.prepare(`
+        SELECT
+          c.id, c.title, c.brand_name, c.target_game, c.state,
+          c.campaign_start_date, c.campaign_end_date, c.updated_at,
+          (SELECT COUNT(*) FROM campaign_creators WHERE campaign_id = c.id) as creator_count,
+          (SELECT COUNT(*) FROM stream_sessions WHERE campaign_id = c.id) as stream_count,
+          (SELECT COUNT(*) FROM campaign_broadcast_matches WHERE campaign_id = c.id AND status = 'matched') as matched_count,
+          (SELECT COUNT(*) FROM delivery_reports WHERE campaign_id = c.id) as report_count,
+          (SELECT MAX(created_at) FROM delivery_reports WHERE campaign_id = c.id) as last_report_at,
+          (SELECT COUNT(*) FROM email_deliveries WHERE campaign_id = c.id AND status = 'sent') as emails_sent,
+          (SELECT COUNT(*) FROM review_queue WHERE campaign_id = c.id AND status = 'pending') as review_pending,
+          u.email as advertiser_email, u.name as advertiser_name
+        FROM campaigns c
+        LEFT JOIN users u ON u.id = c.advertiser_id
+        ${where}
+        ORDER BY c.updated_at DESC
+        LIMIT ? OFFSET ?
+      `).all(...params, limit, offset);
+
+      res.json({
+        ok: true,
+        campaigns,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  캠페인 상세 (자동화 데이터 통합)
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/campaigns/:id', (req, res) => {
+    try {
+      const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
+      if (!campaign) return res.status(404).json({ error: '캠페인 없음' });
+
+      const creators = db.prepare(`
+        SELECT cc.*, cp.display_name, cp.youtube_channel_id, cp.chzzk_channel_id,
+               cp.afreeca_channel_id, cp.engagement_grade, cp.avg_concurrent_viewers,
+               cp.thumbnail_url
+        FROM campaign_creators cc
+        JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE cc.campaign_id = ?
+      `).all(req.params.id);
+
+      res.json({ ok: true, campaign, creators });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 캠페인별 감지 방송
+  router.get('/campaigns/:id/streams', (req, res) => {
+    try {
+      const streams = db.prepare(`
+        SELECT ss.*,
+          (SELECT status FROM campaign_broadcast_matches WHERE stream_session_id = ss.id LIMIT 1) as match_status,
+          (SELECT confidence FROM campaign_broadcast_matches WHERE stream_session_id = ss.id LIMIT 1) as match_confidence,
+          (SELECT review_required FROM campaign_broadcast_matches WHERE stream_session_id = ss.id LIMIT 1) as review_required,
+          cp.display_name as creator_name
+        FROM stream_sessions ss
+        LEFT JOIN campaign_creators cc ON cc.id = ss.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE ss.campaign_id = ?
+        ORDER BY ss.discovered_at DESC
+      `).all(req.params.id);
+
+      res.json({ ok: true, streams });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 캠페인별 리포트
+  router.get('/campaigns/:id/reports', (req, res) => {
+    try {
+      const reports = db.prepare(`
+        SELECT * FROM delivery_reports WHERE campaign_id = ? ORDER BY created_at DESC
+      `).all(req.params.id);
+
+      const emails = db.prepare(`
+        SELECT * FROM email_deliveries WHERE campaign_id = ? ORDER BY created_at DESC
+      `).all(req.params.id);
+
+      res.json({ ok: true, reports, emails });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 캠페인별 자동화 로그 (job_queue)
+  router.get('/campaigns/:id/jobs', (req, res) => {
+    try {
+      const jobs = db.prepare(`
+        SELECT * FROM job_queue
+        WHERE json_extract(payload_json, '$.campaignId') = ?
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all(req.params.id);
+
+      res.json({ ok: true, jobs });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 캠페인별 매칭 결과
+  router.get('/campaigns/:id/matches', (req, res) => {
+    try {
+      const matches = db.prepare(`
+        SELECT cbm.*, cp.display_name as creator_name, ss.title as stream_title,
+               ss.platform, ss.stream_url
+        FROM campaign_broadcast_matches cbm
+        LEFT JOIN campaign_creators cc ON cc.id = cbm.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        LEFT JOIN stream_sessions ss ON ss.id = cbm.stream_session_id
+        WHERE cbm.campaign_id = ?
+        ORDER BY cbm.created_at DESC
+      `).all(req.params.id);
+
+      res.json({ ok: true, matches });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  검수 큐
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/review-queue', (req, res) => {
+    try {
+      const status = req.query.status || 'pending';
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+
+      const total = db.prepare(
+        'SELECT COUNT(*) as cnt FROM review_queue WHERE status = ?'
+      ).get(status).cnt;
+
+      const items = db.prepare(`
+        SELECT rq.*,
+          c.title as campaign_title, c.brand_name, c.target_game,
+          cp.display_name as creator_name,
+          ss.title as stream_title, ss.platform, ss.stream_url
+        FROM review_queue rq
+        LEFT JOIN campaigns c ON c.id = rq.campaign_id
+        LEFT JOIN campaign_creators cc ON cc.id = rq.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        LEFT JOIN stream_sessions ss ON ss.id = CAST(json_extract(rq.payload_json, '$.streamSessionId') AS INTEGER)
+        WHERE rq.status = ?
+        ORDER BY rq.created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(status, limit, offset);
+
+      res.json({
+        ok: true,
+        items: items.map(r => ({ ...r, payload: JSON.parse(r.payload_json || '{}') })),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 검수 승인
+  router.post('/review-queue/:id/approve', (req, res) => {
+    try {
+      reviewQueueService.resolve({ id: req.params.id, status: 'approved', reviewerId: req.user.id });
+
+      // 승인 시 매칭 결과도 업데이트
+      const item = db.prepare('SELECT * FROM review_queue WHERE id = ?').get(req.params.id);
+      if (item) {
+        const payload = JSON.parse(item.payload_json || '{}');
+        if (payload.streamSessionId && item.campaign_id && item.campaign_creator_id) {
+          db.prepare(`
+            UPDATE campaign_broadcast_matches
+            SET matched = 1, status = 'matched', review_required = 0, updated_at = datetime('now')
+            WHERE campaign_id = ? AND campaign_creator_id = ? AND stream_session_id = ?
+          `).run(item.campaign_id, item.campaign_creator_id, payload.streamSessionId);
+        }
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 검수 거절
+  router.post('/review-queue/:id/reject', (req, res) => {
+    try {
+      reviewQueueService.resolve({ id: req.params.id, status: 'rejected', reviewerId: req.user.id });
+
+      const item = db.prepare('SELECT * FROM review_queue WHERE id = ?').get(req.params.id);
+      if (item) {
+        const payload = JSON.parse(item.payload_json || '{}');
+        if (payload.streamSessionId && item.campaign_id && item.campaign_creator_id) {
+          db.prepare(`
+            UPDATE campaign_broadcast_matches
+            SET matched = 0, status = 'rejected', review_required = 0, updated_at = datetime('now')
+            WHERE campaign_id = ? AND campaign_creator_id = ? AND stream_session_id = ?
+          `).run(item.campaign_id, item.campaign_creator_id, payload.streamSessionId);
+        }
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  작업 큐
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/jobs', (req, res) => {
+    try {
+      const status = req.query.status || '';
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(100, parseInt(req.query.limit) || 30);
+      const offset = (page - 1) * limit;
+
+      let where = '';
+      const params = [];
+      if (status) { where = 'WHERE status = ?'; params.push(status); }
+
+      const total = db.prepare(`SELECT COUNT(*) as cnt FROM job_queue ${where}`).get(...params).cnt;
+
+      const jobs = db.prepare(`
+        SELECT * FROM job_queue ${where}
+        ORDER BY
+          CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 WHEN 'failed' THEN 2 ELSE 3 END,
+          priority DESC, created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(...params, limit, offset);
+
+      res.json({
+        ok: true,
+        jobs: jobs.map(j => ({ ...j, payload: JSON.parse(j.payload_json || '{}') })),
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 잡 재시도
+  router.post('/jobs/:id/retry', (req, res) => {
+    try {
+      const job = db.prepare('SELECT * FROM job_queue WHERE id = ?').get(req.params.id);
+      if (!job) return res.status(404).json({ error: '잡 없음' });
+
+      db.prepare(`
+        UPDATE job_queue
+        SET status = 'pending', attempts = 0, locked_at = NULL, locked_by = NULL,
+            run_at = datetime('now'), updated_at = datetime('now')
+        WHERE id = ?
+      `).run(req.params.id);
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 잡 취소
+  router.post('/jobs/:id/cancel', (req, res) => {
+    try {
+      db.prepare(`
+        UPDATE job_queue SET status = 'failed', updated_at = datetime('now') WHERE id = ?
+      `).run(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  방송 모니터링 (전체)
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/streams', (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+      const platform = req.query.platform || '';
+      const matchStatus = req.query.match_status || '';
+
+      let conditions = [];
+      const params = [];
+      if (platform) { conditions.push('ss.platform = ?'); params.push(platform); }
+      if (matchStatus) { conditions.push('cbm.status = ?'); params.push(matchStatus); }
+
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const total = db.prepare(`
+        SELECT COUNT(*) as cnt FROM stream_sessions ss
+        LEFT JOIN campaign_broadcast_matches cbm ON cbm.stream_session_id = ss.id
+        ${where}
+      `).get(...params).cnt;
+
+      const streams = db.prepare(`
+        SELECT ss.*,
+          c.title as campaign_title, c.brand_name,
+          cp.display_name as creator_name,
+          cbm.status as match_status, cbm.confidence as match_confidence,
+          cbm.review_required, cbm.matched,
+          (SELECT COUNT(*) FROM banner_verifications WHERE campaign_creator_id = ss.campaign_creator_id) as banner_count
+        FROM stream_sessions ss
+        LEFT JOIN campaigns c ON c.id = ss.campaign_id
+        LEFT JOIN campaign_creators cc ON cc.id = ss.campaign_creator_id
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        LEFT JOIN campaign_broadcast_matches cbm ON cbm.stream_session_id = ss.id
+        ${where}
+        ORDER BY ss.discovered_at DESC
+        LIMIT ? OFFSET ?
+      `).all(...params, limit, offset);
+
+      res.json({
+        ok: true,
+        streams,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 수동 매칭 강제 지정
+  router.post('/streams/:id/force-match', (req, res) => {
+    try {
+      const session = db.prepare('SELECT * FROM stream_sessions WHERE id = ?').get(req.params.id);
+      if (!session) return res.status(404).json({ error: '세션 없음' });
+
+      db.prepare(`
+        INSERT INTO campaign_broadcast_matches (campaign_id, campaign_creator_id, stream_session_id, matched, confidence, reasons_json, review_required, status)
+        VALUES (?, ?, ?, 1, 1.0, ?, 0, 'matched')
+        ON CONFLICT (campaign_id, campaign_creator_id, COALESCE(video_id, -1), COALESCE(stream_session_id, -1))
+        DO UPDATE SET matched = 1, confidence = 1.0, status = 'matched', review_required = 0, updated_at = datetime('now')
+      `).run(session.campaign_id, session.campaign_creator_id, session.id, JSON.stringify([{ type: 'manual', matched: true, score: 1.0, detail: 'admin forced match' }]));
+
+      db.prepare('UPDATE stream_sessions SET processed_at = datetime(\'now\') WHERE id = ?').run(session.id);
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 수동 제외
+  router.post('/streams/:id/exclude', (req, res) => {
+    try {
+      const session = db.prepare('SELECT * FROM stream_sessions WHERE id = ?').get(req.params.id);
+      if (!session) return res.status(404).json({ error: '세션 없음' });
+
+      db.prepare(`
+        INSERT INTO campaign_broadcast_matches (campaign_id, campaign_creator_id, stream_session_id, matched, confidence, reasons_json, review_required, status)
+        VALUES (?, ?, ?, 0, 0, ?, 0, 'rejected')
+        ON CONFLICT (campaign_id, campaign_creator_id, COALESCE(video_id, -1), COALESCE(stream_session_id, -1))
+        DO UPDATE SET matched = 0, confidence = 0, status = 'rejected', review_required = 0, updated_at = datetime('now')
+      `).run(session.campaign_id, session.campaign_creator_id, session.id, JSON.stringify([{ type: 'manual', matched: false, score: 0, detail: 'admin excluded' }]));
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  리포트 센터
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/reports', (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+
+      const total = db.prepare('SELECT COUNT(*) as cnt FROM delivery_reports').get().cnt;
+
+      const reports = db.prepare(`
+        SELECT dr.*, c.title as campaign_title, c.brand_name, c.target_game
+        FROM delivery_reports dr
+        LEFT JOIN campaigns c ON c.id = dr.campaign_id
+        ORDER BY dr.created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(limit, offset);
+
+      res.json({
+        ok: true,
+        reports,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 리포트 재생성
+  router.post('/reports/:campaignId/regenerate', async (req, res) => {
+    try {
+      jobQueue.enqueue({
+        jobType: 'generate_campaign_report',
+        payload: { campaignId: req.params.campaignId },
+        dedupeKey: `campaign:${req.params.campaignId}:regenerate_report:${Date.now()}`,
+        priority: 10,
+      });
+      res.json({ ok: true, message: '리포트 재생성 잡 등록됨' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  이메일 발송
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/emails', (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+
+      const total = db.prepare('SELECT COUNT(*) as cnt FROM email_deliveries').get().cnt;
+
+      const emails = db.prepare(`
+        SELECT ed.*, c.title as campaign_title
+        FROM email_deliveries ed
+        LEFT JOIN campaigns c ON c.id = ed.campaign_id
+        ORDER BY ed.created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(limit, offset);
+
+      res.json({
+        ok: true,
+        emails,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 이메일 재발송
+  router.post('/emails/:campaignId/resend', (req, res) => {
+    try {
+      jobQueue.enqueue({
+        jobType: 'send_campaign_email',
+        payload: { campaignId: req.params.campaignId },
+        dedupeKey: `campaign:${req.params.campaignId}:resend_email:${Date.now()}`,
+        priority: 5,
+      });
+      res.json({ ok: true, message: '이메일 재발송 잡 등록됨' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  수동 트리거
+  // ═══════════════════════════════════════════════════════════════
+
+  // 수동으로 스트림 스캔 트리거
+  router.post('/campaigns/:id/scan-streams', (req, res) => {
+    try {
+      jobQueue.enqueue({
+        jobType: 'sync_campaign_streams',
+        payload: { campaignId: req.params.id },
+        dedupeKey: `campaign:${req.params.id}:manual_scan:${Date.now()}`,
+        priority: 10,
+      });
+      res.json({ ok: true, message: '스트림 스캔 잡 등록됨' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 수동으로 매칭 재실행
+  router.post('/streams/:id/rematch', (req, res) => {
+    try {
+      const session = db.prepare('SELECT * FROM stream_sessions WHERE id = ?').get(req.params.id);
+      if (!session) return res.status(404).json({ error: '세션 없음' });
+
+      // Reset processed_at
+      db.prepare('UPDATE stream_sessions SET processed_at = NULL WHERE id = ?').run(session.id);
+
+      jobQueue.enqueue({
+        jobType: 'match_campaign_broadcast',
+        payload: {
+          campaignId: session.campaign_id,
+          campaignCreatorId: session.campaign_creator_id,
+          streamSessionId: session.id,
+          platform: session.platform,
+        },
+        dedupeKey: `campaign:${session.campaign_id}:rematch:stream_session:${session.id}:${Date.now()}`,
+        priority: 8,
+      });
+      res.json({ ok: true, message: '재매칭 잡 등록됨' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  return router;
+};

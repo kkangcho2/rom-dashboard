@@ -433,6 +433,118 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id);
   CREATE INDEX IF NOT EXISTS idx_mobile_devices_push ON mobile_devices(push_token);
   CREATE INDEX IF NOT EXISTS idx_push_logs_user ON push_logs(user_id, created_at);
+
+  -- ═══ Phase 1: 자동화 잡 큐 ═══
+
+  CREATE TABLE IF NOT EXISTS job_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_type TEXT NOT NULL,
+    payload_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    priority INTEGER NOT NULL DEFAULT 0,
+    run_at TEXT NOT NULL DEFAULT (datetime('now')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 3,
+    dedupe_key TEXT UNIQUE,
+    locked_at TEXT,
+    locked_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue(status, run_at);
+  CREATE INDEX IF NOT EXISTS idx_job_queue_type ON job_queue(job_type, status);
+
+  -- ═══ Phase 1: 이메일 발송 이력 ═══
+
+  CREATE TABLE IF NOT EXISTS email_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id TEXT,
+    recipient_email TEXT NOT NULL,
+    subject TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    sent_at TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- ═══ Phase 1: 최종 배송 리포트 ═══
+
+  CREATE TABLE IF NOT EXISTS delivery_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id TEXT NOT NULL,
+    report_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+  );
+
+  -- ═══ Phase 1: 수동 검토 큐 ═══
+
+  CREATE TABLE IF NOT EXISTS review_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_type TEXT NOT NULL,
+    campaign_id TEXT,
+    campaign_creator_id TEXT,
+    payload_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewer_id INTEGER,
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- ═══ Phase 2: 후보 스트림 세션 ═══
+
+  CREATE TABLE IF NOT EXISTS stream_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id TEXT NOT NULL,
+    campaign_creator_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    stream_url TEXT,
+    video_id TEXT,
+    title TEXT,
+    live_status TEXT NOT NULL DEFAULT 'discovered',
+    started_at TEXT,
+    ended_at TEXT,
+    metadata_json TEXT,
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    processed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
+    FOREIGN KEY (campaign_creator_id) REFERENCES campaign_creators(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_stream_sessions_campaign ON stream_sessions(campaign_id, campaign_creator_id);
+  CREATE INDEX IF NOT EXISTS idx_stream_sessions_video_id ON stream_sessions(video_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_stream_sessions_unique_session ON stream_sessions(campaign_creator_id, platform, COALESCE(video_id, stream_url));
+
+  -- ═══ Phase 3: 캠페인 방송 매칭 결과 ═══
+
+  CREATE TABLE IF NOT EXISTS campaign_broadcast_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id TEXT NOT NULL,
+    campaign_creator_id TEXT NOT NULL,
+    video_id INTEGER,
+    stream_session_id INTEGER,
+    matched INTEGER NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0,
+    reasons_json TEXT,
+    review_required INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
+    FOREIGN KEY (campaign_creator_id) REFERENCES campaign_creators(id),
+    FOREIGN KEY (video_id) REFERENCES videos(id),
+    FOREIGN KEY (stream_session_id) REFERENCES stream_sessions(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cbm_campaign ON campaign_broadcast_matches(campaign_id, campaign_creator_id);
+  CREATE INDEX IF NOT EXISTS idx_cbm_status ON campaign_broadcast_matches(status, review_required);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_cbm_unique ON campaign_broadcast_matches(campaign_id, campaign_creator_id, COALESCE(video_id, -1), COALESCE(stream_session_id, -1));
 `);
 
 // ─── 관리자 시드 ─────────────────────────────────────────────
@@ -457,6 +569,12 @@ if (!existingAdmin) {
 // ─── DB 마이그레이션: 기존 테이블에 누락 칼럼 추가 ──────────
 try { db.prepare("ALTER TABLE creator_profiles ADD COLUMN thumbnail_url TEXT DEFAULT ''").run(); } catch {}
 try { db.prepare("ALTER TABLE creator_profiles ADD COLUMN subscriber_count INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN target_game TEXT DEFAULT ''").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN contract_months INTEGER DEFAULT 1").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN broadcasts_per_month INTEGER DEFAULT 4").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN hours_per_broadcast REAL DEFAULT 2").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN budget_per_creator INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN currency TEXT DEFAULT 'KRW'").run(); } catch {}
 
 // ─── 광고 게임 시드 ─────────────────────────────────────────
 const SPONSORED_GAMES = ['빅보스', '아키텍트', '뱀피르', 'RF온라인', '레이븐2'];

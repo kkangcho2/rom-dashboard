@@ -1,0 +1,74 @@
+/**
+ * Admin Automation API Service
+ * Campaign automation system admin endpoints
+ */
+import { authFetch } from '../store/useAuthStore';
+
+const BASE = '/admin/automation';
+
+async function fetchJson(path, options) {
+  const res = await authFetch(`${BASE}${path}`, options);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'API 오류' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+function post(path) {
+  return fetchJson(path, { method: 'POST' });
+}
+
+// ─── Dashboard ──────────────────────────────────────────────
+export const getDashboard = () => fetchJson('/dashboard');
+
+// ─── Campaigns ──────────────────────────────────────────────
+export const getCampaigns = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/campaigns${q ? `?${q}` : ''}`);
+};
+export const getCampaignDetail = (id) => fetchJson(`/campaigns/${id}`);
+export const getCampaignStreams = (id) => fetchJson(`/campaigns/${id}/streams`);
+export const getCampaignReports = (id) => fetchJson(`/campaigns/${id}/reports`);
+export const getCampaignJobs = (id) => fetchJson(`/campaigns/${id}/jobs`);
+export const getCampaignMatches = (id) => fetchJson(`/campaigns/${id}/matches`);
+export const scanCampaignStreams = (id) => post(`/campaigns/${id}/scan-streams`);
+
+// ─── Review Queue ───────────────────────────────────────────
+export const getReviewQueue = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/review-queue${q ? `?${q}` : ''}`);
+};
+export const approveReview = (id) => post(`/review-queue/${id}/approve`);
+export const rejectReview = (id) => post(`/review-queue/${id}/reject`);
+
+// ─── Job Queue ──────────────────────────────────────────────
+export const getJobs = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/jobs${q ? `?${q}` : ''}`);
+};
+export const retryJob = (id) => post(`/jobs/${id}/retry`);
+export const cancelJob = (id) => post(`/jobs/${id}/cancel`);
+
+// ─── Streams ────────────────────────────────────────────────
+export const getStreams = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/streams${q ? `?${q}` : ''}`);
+};
+export const forceMatchStream = (id) => post(`/streams/${id}/force-match`);
+export const excludeStream = (id) => post(`/streams/${id}/exclude`);
+export const rematchStream = (id) => post(`/streams/${id}/rematch`);
+
+// ─── Reports ────────────────────────────────────────────────
+export const getReports = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/reports${q ? `?${q}` : ''}`);
+};
+export const regenerateReport = (campaignId) => post(`/reports/${campaignId}/regenerate`);
+
+// ─── Emails ─────────────────────────────────────────────────
+export const getEmails = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/emails${q ? `?${q}` : ''}`);
+};
+export const resendEmail = (campaignId) => post(`/emails/${campaignId}/resend`);
