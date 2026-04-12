@@ -104,6 +104,120 @@ export async function fetchYtChat(url) {
   return res.json();
 }
 
+// ─── SNS Automation API ────────────────────────────────────
+
+export async function getSnsStats() {
+  const res = await fetch(`${API_BASE}/sns/stats`);
+  if (!res.ok) throw new Error('SNS stats fetch failed');
+  return res.json();
+}
+
+// Content Plans
+export async function getContentPlans(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/content-plans${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createContentPlan(data) {
+  const res = await fetch(`${API_BASE}/sns/content-plans`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function updateContentPlan(id, data) {
+  const res = await fetch(`${API_BASE}/sns/content-plans/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function deleteContentPlan(id) {
+  const res = await fetch(`${API_BASE}/sns/content-plans/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+// Scripts
+export async function getScripts(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/scripts${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createScript(data) {
+  const res = await fetch(`${API_BASE}/sns/scripts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function updateScript(id, data) {
+  const res = await fetch(`${API_BASE}/sns/scripts/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function deleteScript(id) {
+  const res = await fetch(`${API_BASE}/sns/scripts/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+// Upload Schedules
+export async function getSchedules(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/schedules${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createSchedule(data) {
+  const res = await fetch(`${API_BASE}/sns/schedules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function updateSchedule(id, data) {
+  const res = await fetch(`${API_BASE}/sns/schedules/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function deleteSchedule(id) {
+  const res = await fetch(`${API_BASE}/sns/schedules/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+// Auto Responses
+export async function getAutoResponses(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/auto-responses${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createAutoResponse(data) {
+  const res = await fetch(`${API_BASE}/sns/auto-responses`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function updateAutoResponse(id, data) {
+  const res = await fetch(`${API_BASE}/sns/auto-responses/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function deleteAutoResponse(id) {
+  const res = await fetch(`${API_BASE}/sns/auto-responses/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+// Leads
+export async function getLeads(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/leads${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createLead(data) {
+  const res = await fetch(`${API_BASE}/sns/leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function updateLead(id, data) {
+  const res = await fetch(`${API_BASE}/sns/leads/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+export async function deleteLead(id) {
+  const res = await fetch(`${API_BASE}/sns/leads/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+// Templates
+export async function getIndustryTemplates(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_BASE}/sns/templates${qs ? '?' + qs : ''}`);
+  return res.json();
+}
+export async function createIndustryTemplate(data) {
+  const res = await fetch(`${API_BASE}/sns/templates`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  return res.json();
+}
+
 // Poll for crawl completion
 export function pollCrawlStatus(jobId, onProgress, intervalMs = 1000) {
   return new Promise((resolve, reject) => {

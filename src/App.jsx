@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import CreatorSearch from './CreatorSearch';
 import SaasAdmin from './SaasAdmin';
+import SnsAutomation from './components/sns-automation';
 import { startCrawl, pollCrawlStatus, getVideoAnalysis, fetchYtTranscript, fetchYtChat, getVideoInfo } from './api';
 import './index.css';
 
@@ -2695,6 +2696,10 @@ export default function App() {
     setPage('search');
   };
 
+  if (page === 'sns') {
+    return <SnsAutomation onBack={() => setPage('search')} />;
+  }
+
   if (page === 'admin') {
     return <SaasAdmin onGoToDashboard={() => setPage('search')} isLoggedIn={isLoggedIn} userRole={userRole} onLogin={handleLogin} onLogout={handleLogout} />;
   }
@@ -2720,6 +2725,7 @@ export default function App() {
         }}
         onGoToAdmin={() => setPage('admin')}
         onGoToReport={() => setPage('report')}
+        onGoToSns={() => setPage('sns')}
         isLoggedIn={isLoggedIn}
         onLogin={handleLogin}
         onLogout={handleLogout}

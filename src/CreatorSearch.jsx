@@ -73,7 +73,7 @@ function mapChannelToCreator(r, query) {
 // ─── Main Component ──────────────────────────────────────────
 // (Featured creators are now loaded from API - no hardcoded data)
 
-export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport, isLoggedIn, onLogin, onLogout }) {
+export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToReport, onGoToSns, isLoggedIn, onLogin, onLogout }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState('channel');
   const [platformFilter, setPlatformFilter] = useState('all');
@@ -698,6 +698,11 @@ export default function CreatorSearch({ onSelectCreator, onGoToAdmin, onGoToRepo
             {onGoToReport && (
               <button onClick={onGoToReport} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
                 <FileSpreadsheet size={13} /> 방송 리포트
+              </button>
+            )}
+            {onGoToSns && (
+              <button onClick={onGoToSns} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
+                <Sparkles size={13} /> SNS 자동화
               </button>
             )}
             {onGoToAdmin && (

@@ -753,6 +753,12 @@ app.get('/api/yt/chat', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ─── SNS Automation API (별도 모듈) ─────────────────────────
+// ═══════════════════════════════════════════════════════════════
+const snsRoutes = require('./sns-routes.cjs');
+app.use('/api/sns', snsRoutes);
+
 // ─── Start Server ────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n  🚀 LivePulse Crawling Server`);

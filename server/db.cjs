@@ -75,6 +75,89 @@ db.exec(`
     published_at TEXT,
     crawled_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  -- ─── SNS Automation Tables ──────────────────────────────────
+
+  CREATE TABLE IF NOT EXISTS sns_content_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    industry TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    content_type TEXT DEFAULT 'video',
+    target_platform TEXT DEFAULT 'instagram',
+    status TEXT DEFAULT 'idea',
+    tags TEXT,
+    scheduled_date TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sns_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_plan_id INTEGER REFERENCES sns_content_plans(id),
+    industry TEXT NOT NULL,
+    prompt_template TEXT,
+    generated_script TEXT,
+    title TEXT,
+    hashtags TEXT,
+    status TEXT DEFAULT 'draft',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sns_upload_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    script_id INTEGER REFERENCES sns_scripts(id),
+    platform TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    hashtags TEXT,
+    scheduled_at DATETIME NOT NULL,
+    status TEXT DEFAULT 'scheduled',
+    video_url TEXT,
+    post_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sns_auto_responses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    industry TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    trigger_keywords TEXT,
+    response_template TEXT NOT NULL,
+    platform TEXT DEFAULT 'all',
+    is_active INTEGER DEFAULT 1,
+    use_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sns_leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    contact TEXT,
+    platform TEXT,
+    source TEXT,
+    inquiry_type TEXT,
+    message TEXT,
+    status TEXT DEFAULT 'new',
+    assigned_to TEXT,
+    notes TEXT,
+    converted_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sns_industry_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    industry TEXT NOT NULL,
+    template_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    prompt_content TEXT NOT NULL,
+    variables TEXT,
+    is_default INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 module.exports = db;
