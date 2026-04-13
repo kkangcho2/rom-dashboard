@@ -50,7 +50,7 @@ module.exports = function (db) {
   // ─── 역할 변경 (테스터 지정 등) ───────────────────────────
   router.put('/users/:id/role', (req, res) => {
     const { role } = req.body;
-    const validRoles = ['admin', 'tester', 'paid_user', 'free_viewer'];
+    const validRoles = ['admin', 'tester', 'paid_user', 'free_viewer', 'advertiser', 'creator'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ error: `유효한 역할: ${validRoles.join(', ')}` });
     }

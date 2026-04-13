@@ -89,7 +89,7 @@ app.use('/api/admin/marketplace', requireAuth(db), requireRole('admin'), require
 app.use('/api/admin/batch-crawl', requireAuth(db), requireRole('admin'), require('./routes/batch-crawl.cjs')(db));
 app.use('/api/admin/cache-fix', requireAuth(db), requireRole('admin'), require('./routes/cache-fix.cjs')(db));
 app.use('/api/admin/auto-register', requireAuth(db), requireRole('admin'), require('./routes/auto-register.cjs')(db));
-app.use('/api/admin/automation', requireAuth(db), requireRole('admin'), require('./routes/admin-automation.cjs')(db));
+app.use('/api/admin/automation', requireAuth(db), requireRole('admin', 'advertiser'), require('./routes/admin-automation.cjs')(db));
 
 // 크리에이터 분석 (유료/테스터/관리자)
 app.use('/api/analysis', apiLimiter, requireAuth(db), requireRole('admin', 'tester', 'paid_user'), require('./routes/creator-analysis.cjs')(db));

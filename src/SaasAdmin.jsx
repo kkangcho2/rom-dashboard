@@ -31,8 +31,13 @@ export default function SaasAdmin() {
   const { user, logout } = useAuthStore();
   const userRole = user?.role || 'free_viewer';
   const isAdmin = userRole === 'admin';
+  const isAdvertiser = userRole === 'advertiser';
+  // 관리 콘솔 접근 허용 역할
+  const canAccessAdminConsole = isAdmin || isAdvertiser;
 
-  const [currentPage, setCurrentPage] = useState(() => isAdmin ? 'automation-dashboard' : 'mypage');
+  // advertiser는 자신 뷰 토글 불필요 (전용 뷰)
+  const defaultPage = isAdmin ? 'automation-dashboard' : (isAdvertiser ? 'campaigns' : 'mypage');
+  const [currentPage, setCurrentPage] = useState(defaultPage);
   const [viewMode, setViewMode] = useState('admin'); // 'admin' | 'user'
   const [pageParams, setPageParams] = useState({});
 
@@ -42,6 +47,7 @@ export default function SaasAdmin() {
     setPageParams(params);
   }, []);
 
+  // 관리자 전용 전체 메뉴
   const adminNavItems = [
     // ─── 캠페인 자동화 (운영 관제) ───
     { id: 'automation-dashboard', label: '운영 관제실', icon: Activity, group: 'automation' },
@@ -61,17 +67,31 @@ export default function SaasAdmin() {
     { id: 'settings', label: '워크스페이스', icon: Settings, group: 'system' },
   ];
 
+  // 캠페인 담당자(광고주/대행사) 제한 메뉴
+  const advertiserNavItems = [
+    { id: 'campaigns', label: '내 캠페인', icon: Megaphone, group: 'advertiser' },
+    { id: 'stream-monitor', label: '방송 모니터링', icon: Monitor, group: 'advertiser' },
+    { id: 'report-center', label: '리포트 센터', icon: FileText, group: 'advertiser' },
+    { id: 'email-delivery', label: '이메일 발송', icon: Mail, group: 'advertiser' },
+    { id: 'settings', label: '워크스페이스', icon: Settings, group: 'system' },
+  ];
+
   const userNavItems = [
     { id: 'pricing', label: '요금제', icon: CreditCard },
     { id: 'settings', label: '워크스페이스', icon: Settings },
   ];
 
-  // 유저 뷰 모드일 때는 UserMyPage 전체 렌더
+  // 뷰 모드에 따른 메뉴 선택
   const showUserView = viewMode === 'user';
-  const navItems = showUserView ? userNavItems : (isAdmin ? adminNavItems : userNavItems);
+  let navItems;
+  if (showUserView) navItems = userNavItems;
+  else if (isAdmin) navItems = adminNavItems;
+  else if (isAdvertiser) navItems = advertiserNavItems;
+  else navItems = userNavItems;
 
   // Group nav items
   const automationItems = navItems.filter(i => i.group === 'automation');
+  const advertiserItems = navItems.filter(i => i.group === 'advertiser');
   const systemItems = navItems.filter(i => i.group === 'system');
   const ungrouped = navItems.filter(i => !i.group);
 
@@ -87,6 +107,9 @@ export default function SaasAdmin() {
           <span className="text-xs font-bold text-white">LivedPulse</span>
           {isAdmin && (
             <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">ADMIN</span>
+          )}
+          {isAdvertiser && (
+            <span className="text-[8px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-bold">캠페인 담당자</span>
           )}
         </div>
 
@@ -122,10 +145,10 @@ export default function SaasAdmin() {
 
         {/* Right: user info + logout */}
         <div className={`flex items-center gap-3 ${isAdmin ? '' : 'ml-auto'}`}>
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${isAdmin ? 'bg-gradient-to-br from-amber-500/40 to-orange-500/40' : 'bg-gradient-to-br from-indigo-500/40 to-purple-500/40'}`}>
-            {isAdmin ? 'A' : 'K'}
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${isAdmin ? 'bg-gradient-to-br from-amber-500/40 to-orange-500/40' : isAdvertiser ? 'bg-gradient-to-br from-cyan-500/40 to-teal-500/40' : 'bg-gradient-to-br from-indigo-500/40 to-purple-500/40'}`}>
+            {isAdmin ? 'A' : isAdvertiser ? '광' : 'K'}
           </div>
-          <span className="text-[10px] text-slate-400">{isAdmin ? '시스템 관리자' : '사용자'}</span>
+          <span className="text-[10px] text-slate-400">{isAdmin ? '시스템 관리자' : isAdvertiser ? '캠페인 담당자' : '사용자'}</span>
           <button
             onClick={logout}
             className="p-1 rounded hover:bg-[#374766]/30 transition-colors"
@@ -142,6 +165,31 @@ export default function SaasAdmin() {
         {!showUserView && (
           <aside className="w-[220px] min-w-[220px] border-r border-[#374766]/30 bg-[#111827]/50 flex flex-col overflow-y-auto">
             <nav className="flex-1 p-3 space-y-0.5 pt-4">
+              {/* Advertiser (캠페인 담당자) group */}
+              {advertiserItems.length > 0 && (
+                <>
+                  <div className="px-3 py-1.5 text-[9px] font-bold text-cyan-500/70 uppercase tracking-wider">캠페인 담당자 콘솔</div>
+                  {advertiserItems.map(item => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id || (item.id === 'campaigns' && currentPage === 'campaign-detail') || (item.id === 'report-center' && currentPage === 'report-detail');
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                          isActive
+                            ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/20'
+                            : 'text-slate-400 hover:bg-[#1a2035] hover:text-slate-200'
+                        }`}
+                      >
+                        <Icon size={14} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
               {/* Automation group */}
               {automationItems.length > 0 && (
                 <>

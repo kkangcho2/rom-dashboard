@@ -2,17 +2,26 @@ import { useState, useEffect } from 'react';
 import {
   Users, TrendingUp, DollarSign, FileText,
   MoreVertical, Edit3, Pause, Trash2, CheckCircle2, AlertTriangle, UserX,
-  Shield, UserCheck, Search, RefreshCw, Activity
+  Shield, UserCheck, Search, RefreshCw, Activity, Megaphone, Briefcase, User
 } from 'lucide-react';
 import { GlassCard } from './shared';
 import { getAdminUsers, updateUserRole, updateUserStatus, getStats } from '../services/api';
 import { authFetch } from '../store/useAuthStore';
 
-const ROLE_LABELS = { admin: '관리자', tester: '테스터', paid_user: '유료', free_viewer: '무료' };
+const ROLE_LABELS = {
+  admin: '관리자',
+  advertiser: '캠페인 담당자',
+  tester: '테스터',
+  paid_user: '유료',
+  creator: '크리에이터',
+  free_viewer: '무료'
+};
 const ROLE_COLORS = {
   admin: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  advertiser: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
   tester: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
   paid_user: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+  creator: 'bg-pink-500/20 text-pink-300 border-pink-500/30',
   free_viewer: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
 };
 const STATUS_COLORS = { active: 'bg-green-500/20 text-green-400', suspended: 'bg-red-500/20 text-red-400' };
@@ -155,11 +164,19 @@ export default function SuperAdminPage() {
                           <MoreVertical size={14} />
                         </button>
                         {actionOpen === m.id && (
-                          <div className="absolute right-0 top-7 z-20 w-40 bg-[#1a2035] border border-[#374766]/50 rounded-xl shadow-2xl overflow-hidden">
+                          <div className="absolute right-0 top-7 z-20 w-44 bg-[#1a2035] border border-[#374766]/50 rounded-xl shadow-2xl overflow-hidden">
+                            {/* 캠페인 담당자 지정/해제 (광고주/대행사) */}
+                            {m.role !== 'admin' && (
+                              <button onClick={() => handleRoleChange(m.id, m.role === 'advertiser' ? 'free_viewer' : 'advertiser')}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30">
+                                <Megaphone size={12} className="text-cyan-400" />
+                                {m.role === 'advertiser' ? '담당자 해제' : '캠페인 담당자 지정'}
+                              </button>
+                            )}
                             {/* 테스터 지정/해제 */}
                             {m.role !== 'admin' && (
                               <button onClick={() => handleRoleChange(m.id, m.role === 'tester' ? 'free_viewer' : 'tester')}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30">
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30 border-t border-[#374766]/30">
                                 <Shield size={12} className="text-amber-400" />
                                 {m.role === 'tester' ? '테스터 해제' : '테스터 지정'}
                               </button>
@@ -167,8 +184,15 @@ export default function SuperAdminPage() {
                             {/* 유료 전환 */}
                             {m.role !== 'admin' && m.role !== 'paid_user' && (
                               <button onClick={() => handleRoleChange(m.id, 'paid_user')}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30">
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30 border-t border-[#374766]/30">
                                 <DollarSign size={12} className="text-indigo-400" /> 유료 전환
+                              </button>
+                            )}
+                            {/* 무료로 되돌리기 */}
+                            {m.role !== 'admin' && m.role !== 'free_viewer' && (
+                              <button onClick={() => handleRoleChange(m.id, 'free_viewer')}
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30 border-t border-[#374766]/30">
+                                <User size={12} className="text-slate-400" /> 일반 회원으로
                               </button>
                             )}
                             {/* 정지/활성 */}

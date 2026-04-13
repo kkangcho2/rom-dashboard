@@ -13,6 +13,25 @@ module.exports = function (db) {
 
   const jobQueue = require('../services/job-queue.cjs');
   const orchestrator = require('../services/campaign-orchestrator.cjs');
+
+  // ─── Role-based scope helper ──────────────────────────────────
+  // advertiser는 본인 캠페인(advertiser_id = user.id)만 조회 가능
+  // admin은 전체 조회 가능
+  const isAdvertiserOnly = (req) => req.user?.role === 'advertiser';
+  const getAdvertiserId = (req) => req.user?.id;
+  const canAccessCampaign = (req, campaignId) => {
+    if (req.user?.role === 'admin') return true;
+    if (req.user?.role !== 'advertiser') return false;
+    const row = db.prepare('SELECT advertiser_id FROM campaigns WHERE id = ?').get(campaignId);
+    return !!row && row.advertiser_id === req.user.id;
+  };
+  const requireCampaignAccess = (req, res, campaignId) => {
+    if (!canAccessCampaign(req, campaignId)) {
+      res.status(403).json({ error: '접근 권한이 없습니다' });
+      return false;
+    }
+    return true;
+  };
   const reviewQueueService = require('../services/review-queue.cjs');
 
   // ═══════════════════════════════════════════════════════════════
@@ -149,12 +168,15 @@ module.exports = function (db) {
       const offset = (page - 1) * limit;
       const state = req.query.state || '';
 
-      let where = '';
+      // advertiser role scope filter
+      const conditions = [];
       const params = [];
-      if (state) {
-        where = 'WHERE c.state = ?';
-        params.push(state);
+      if (state) { conditions.push('c.state = ?'); params.push(state); }
+      if (isAdvertiserOnly(req)) {
+        conditions.push('c.advertiser_id = ?');
+        params.push(getAdvertiserId(req));
       }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
       const total = db.prepare(`SELECT COUNT(*) as cnt FROM campaigns c ${where}`).get(...params).cnt;
 
@@ -393,6 +415,7 @@ module.exports = function (db) {
 
   router.get('/campaigns/:id', (req, res) => {
     try {
+      if (!requireCampaignAccess(req, res, req.params.id)) return;
       const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
       if (!campaign) return res.status(404).json({ error: '캠페인 없음' });
 
@@ -824,8 +847,17 @@ module.exports = function (db) {
       const limit = Math.min(50, parseInt(req.query.limit) || 20);
       const offset = (page - 1) * limit;
 
-      // 기존 검증 리포트 (verification_reports) — 실제 데이터가 여기에 있음
-      const vrTotal = db.prepare('SELECT COUNT(*) as cnt FROM verification_reports').get().cnt;
+      // advertiser 스코프: JOIN으로 c.advertiser_id 필터
+      const advertiserFilter = isAdvertiserOnly(req) ? ' AND c.advertiser_id = ?' : '';
+      const advertiserParams = isAdvertiserOnly(req) ? [getAdvertiserId(req)] : [];
+
+      // 기존 검증 리포트 (verification_reports)
+      const vrTotal = db.prepare(
+        `SELECT COUNT(*) as cnt FROM verification_reports vr
+         LEFT JOIN campaigns c ON c.id = vr.campaign_id
+         WHERE 1=1 ${advertiserFilter}`
+      ).get(...advertiserParams).cnt;
+
       const verificationReports = db.prepare(`
         SELECT vr.id, vr.campaign_id, vr.campaign_creator_id,
                vr.total_stream_minutes, vr.banner_exposed_minutes, vr.exposure_rate,
@@ -838,19 +870,26 @@ module.exports = function (db) {
         LEFT JOIN campaigns c ON c.id = vr.campaign_id
         LEFT JOIN campaign_creators cc ON cc.id = vr.campaign_creator_id
         LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE 1=1 ${advertiserFilter}
         ORDER BY vr.created_at DESC
         LIMIT ? OFFSET ?
-      `).all(limit, offset);
+      `).all(...advertiserParams, limit, offset);
 
-      // 신규 배송 리포트 (delivery_reports) — 자동화 파이프라인용
-      const drTotal = db.prepare('SELECT COUNT(*) as cnt FROM delivery_reports').get().cnt;
+      // 신규 배송 리포트
+      const drTotal = db.prepare(
+        `SELECT COUNT(*) as cnt FROM delivery_reports dr
+         LEFT JOIN campaigns c ON c.id = dr.campaign_id
+         WHERE 1=1 ${advertiserFilter}`
+      ).get(...advertiserParams).cnt;
+
       const deliveryReports = db.prepare(`
         SELECT dr.*, c.title as campaign_title, c.brand_name, c.target_game
         FROM delivery_reports dr
         LEFT JOIN campaigns c ON c.id = dr.campaign_id
+        WHERE 1=1 ${advertiserFilter}
         ORDER BY dr.created_at DESC
         LIMIT ?
-      `).all(limit);
+      `).all(...advertiserParams, limit);
 
       res.json({
         ok: true,
@@ -913,15 +952,23 @@ module.exports = function (db) {
       const limit = Math.min(50, parseInt(req.query.limit) || 20);
       const offset = (page - 1) * limit;
 
-      const total = db.prepare('SELECT COUNT(*) as cnt FROM email_deliveries').get().cnt;
+      const advertiserFilter = isAdvertiserOnly(req) ? ' AND c.advertiser_id = ?' : '';
+      const advertiserParams = isAdvertiserOnly(req) ? [getAdvertiserId(req)] : [];
+
+      const total = db.prepare(
+        `SELECT COUNT(*) as cnt FROM email_deliveries ed
+         LEFT JOIN campaigns c ON c.id = ed.campaign_id
+         WHERE 1=1 ${advertiserFilter}`
+      ).get(...advertiserParams).cnt;
 
       const emails = db.prepare(`
         SELECT ed.*, c.title as campaign_title
         FROM email_deliveries ed
         LEFT JOIN campaigns c ON c.id = ed.campaign_id
+        WHERE 1=1 ${advertiserFilter}
         ORDER BY ed.created_at DESC
         LIMIT ? OFFSET ?
-      `).all(limit, offset);
+      `).all(...advertiserParams, limit, offset);
 
       res.json({
         ok: true,
