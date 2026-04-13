@@ -882,6 +882,37 @@ module.exports = function (db) {
   });
 
   // 잡 취소
+  // 잡 영구 삭제
+  router.delete('/jobs/:id', (req, res) => {
+    try {
+      const r = db.prepare('DELETE FROM job_queue WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '잡 없음' });
+      res.json({ ok: true, deleted: r.changes });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 여러 잡 일괄 삭제 (filter 기반)
+  router.post('/jobs/bulk-delete', (req, res) => {
+    try {
+      const { ids, status } = req.body;
+      let totalDeleted = 0;
+      if (Array.isArray(ids) && ids.length > 0) {
+        const placeholders = ids.map(() => '?').join(',');
+        const r = db.prepare(`DELETE FROM job_queue WHERE id IN (${placeholders})`).run(...ids);
+        totalDeleted += r.changes;
+      }
+      if (status) {
+        const r = db.prepare('DELETE FROM job_queue WHERE status = ?').run(status);
+        totalDeleted += r.changes;
+      }
+      res.json({ ok: true, deleted: totalDeleted });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.post('/jobs/:id/cancel', (req, res) => {
     try {
       db.prepare(`

@@ -70,6 +70,8 @@ export const getJobs = (params = {}) => {
 };
 export const retryJob = (id) => post(`/jobs/${id}/retry`);
 export const cancelJob = (id) => post(`/jobs/${id}/cancel`);
+export const deleteJob = (id) => fetchJson(`/jobs/${id}`, { method: 'DELETE' });
+export const bulkDeleteJobs = (body) => fetchJson('/jobs/bulk-delete', { method: 'POST', body: JSON.stringify(body) });
 
 // ─── Streams ────────────────────────────────────────────────
 export const getStreams = (params = {}) => {

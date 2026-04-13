@@ -3,10 +3,10 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Server, RefreshCw, Filter, Play, XCircle, RotateCcw, Clock
+  Server, RefreshCw, Filter, Play, XCircle, RotateCcw, Clock, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getJobs, retryJob, cancelJob } from '../../services/admin-automation-api';
+import { getJobs, retryJob, cancelJob, deleteJob, bulkDeleteJobs } from '../../services/admin-automation-api';
 
 const JOB_TYPE_LABELS = {
   monitor_campaign: '캠페인 모니터',
@@ -50,6 +50,20 @@ export default function AdminJobQueuePage() {
   const handleCancel = async (id) => {
     await cancelJob(id); showAction('취소됨'); load();
   };
+  const handleDelete = async (id) => {
+    if (!confirm(`잡 #${id}을(를) 완전히 삭제합니다. 이 동작은 되돌릴 수 없습니다. 계속하시겠습니까?`)) return;
+    await deleteJob(id); showAction('삭제됨'); load();
+  };
+  const handleBulkDeleteFailed = async () => {
+    if (!confirm('실패한 모든 잡을 영구 삭제합니다. 계속?')) return;
+    const r = await bulkDeleteJobs({ status: 'failed' });
+    showAction(`${r.deleted}건 삭제됨`); load();
+  };
+  const handleBulkDeleteCompleted = async () => {
+    if (!confirm('완료된 모든 잡을 영구 삭제합니다. 큐 정리용. 계속?')) return;
+    const r = await bulkDeleteJobs({ status: 'completed' });
+    showAction(`${r.deleted}건 삭제됨`); load();
+  };
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px]">
@@ -60,6 +74,16 @@ export default function AdminJobQueuePage() {
         </h1>
         <div className="flex items-center gap-2">
           {actionMsg && <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{actionMsg}</span>}
+          <button onClick={handleBulkDeleteCompleted}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 border border-[#374766]/30 transition"
+            title="완료된 잡 정리">
+            <Trash2 size={12} /> 완료 정리
+          </button>
+          <button onClick={handleBulkDeleteFailed}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-red-400 hover:text-white hover:bg-red-500/20 border border-red-500/25 transition"
+            title="실패한 잡 모두 삭제">
+            <Trash2 size={12} /> 실패 일괄 삭제
+          </button>
           <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-[#1a2035] border border-[#374766]/30 transition">
             <RefreshCw size={12} /> 새로고침
           </button>
@@ -121,18 +145,21 @@ export default function AdminJobQueuePage() {
                     <td className="py-2.5 px-3 text-slate-500 text-[10px]">{formatDate(j.created_at)}</td>
                     <td className="py-2.5 px-3 text-slate-500 text-[10px]">{j.payload?.campaignId?.slice(0, 8) || '-'}</td>
                     <td className="py-2.5 px-3 text-center">
-                      {(j.status === 'failed' || j.status === 'pending') && (
-                        <div className="flex items-center gap-1 justify-center">
+                      <div className="flex items-center gap-1 justify-center">
+                        {(j.status === 'failed' || j.status === 'pending') && (
                           <button onClick={() => handleRetry(j.id)} className="p-1 rounded hover:bg-cyan-500/20 transition" title="재시도">
                             <RotateCcw size={12} className="text-cyan-400" />
                           </button>
-                          {j.status === 'pending' && (
-                            <button onClick={() => handleCancel(j.id)} className="p-1 rounded hover:bg-red-500/20 transition" title="취소">
-                              <XCircle size={12} className="text-red-400" />
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {j.status === 'pending' && (
+                          <button onClick={() => handleCancel(j.id)} className="p-1 rounded hover:bg-amber-500/20 transition" title="취소 (failed로 마크)">
+                            <XCircle size={12} className="text-amber-400" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(j.id)} className="p-1 rounded hover:bg-red-500/20 transition" title="영구 삭제">
+                          <Trash2 size={12} className="text-red-400" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
