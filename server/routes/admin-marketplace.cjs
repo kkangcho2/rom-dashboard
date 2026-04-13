@@ -422,7 +422,7 @@ module.exports = function (db) {
     const total = db.prepare(`SELECT COUNT(*) as c FROM campaigns c ${where}`).get(...params).c;
 
     const campaigns = db.prepare(`
-      SELECT c.*, u.email as advertiser_email, u.name as advertiser_name,
+      SELECT c.*, u.email as advertiser_email, u.name as advertiser_name, u.role as advertiser_role,
              ap.company_name,
              (SELECT COUNT(*) FROM campaign_creators WHERE campaign_id = c.id) as match_count,
              (SELECT COUNT(*) FROM campaign_creators WHERE campaign_id = c.id AND status = 'accepted') as accepted_count

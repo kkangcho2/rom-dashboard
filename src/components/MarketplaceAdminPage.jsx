@@ -554,6 +554,68 @@ function CreatorDetailPanel({ creator, dateColumns, onBack, campaignTitle }) {
 // ═══════════════════════════════════════════════════════════
 //  Campaigns Tab
 // ═══════════════════════════════════════════════════════════
+// 광고주 역할 토글 (advertiser 지정/해제)
+function AdvertiserRoleToggle({ userId, role, email, onChanged }) {
+  const [loading, setLoading] = useState(false);
+  const [currentRole, setCurrentRole] = useState(role);
+  const isAdvertiser = currentRole === 'advertiser';
+  const isAdmin = currentRole === 'admin';
+
+  // role prop이 바뀌면 state 동기화
+  useEffect(() => { setCurrentRole(role); }, [role]);
+
+  if (!userId) {
+    return <span className="text-[10px] text-slate-600">-</span>;
+  }
+
+  const toggle = async () => {
+    if (isAdmin) {
+      alert('관리자 계정은 여기서 변경할 수 없습니다');
+      return;
+    }
+    const newRole = isAdvertiser ? 'free_viewer' : 'advertiser';
+    const confirmMsg = isAdvertiser
+      ? `${email}의 캠페인 담당자 권한을 해제하시겠습니까?`
+      : `${email}을(를) 캠페인 담당자(광고주/대행사)로 지정하시겠습니까?\n해당 유저는 관리 콘솔에서 본인 캠페인의 리포트/이메일을 볼 수 있게 됩니다.`;
+    if (!confirm(confirmMsg)) return;
+
+    setLoading(true);
+    try {
+      const res = await authFetch(`/admin/users/${userId}/role`, {
+        method: 'PUT',
+        body: JSON.stringify({ role: newRole }),
+      });
+      const j = await res.json();
+      if (j.ok) {
+        setCurrentRole(newRole);
+        onChanged?.();
+      } else {
+        alert('실패: ' + (j.error || 'unknown'));
+      }
+    } catch (e) { alert('실패: ' + e.message); }
+    setLoading(false);
+  };
+
+  if (isAdmin) {
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 whitespace-nowrap">관리자</span>;
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      className={`text-[10px] px-2 py-0.5 rounded whitespace-nowrap transition ${
+        isAdvertiser
+          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30'
+          : 'bg-slate-700/40 text-slate-400 border border-slate-600/30 hover:bg-slate-600/50 hover:text-slate-200'
+      }`}
+      title={isAdvertiser ? '클릭하여 담당자 해제' : '클릭하여 캠페인 담당자로 지정'}
+    >
+      {loading ? '...' : (isAdvertiser ? '✓ 담당자' : '+ 담당자 지정')}
+    </button>
+  );
+}
+
 function CampaignsTab() {
   const [campaigns, setCampaigns] = useState([]);
   const [pagination, setPagination] = useState({});
@@ -770,7 +832,7 @@ function CampaignsTab() {
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-dark-700/60">
-              {['제목', '브랜드', '광고주', '상태', '매칭', '생성일', '리포트', '관리'].map(h => (
+              {['제목', '브랜드', '광고주', '역할', '상태', '매칭', '생성일', '리포트', '관리'].map(h => (
                 <th key={h} className="px-3 py-2.5 text-slate-400 font-medium text-left whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -780,7 +842,12 @@ function CampaignsTab() {
               <tr key={c.id} className={`border-t border-dark-500/20 hover:bg-dark-700/30 ${i % 2 ? 'bg-dark-700/10' : ''}`}>
                 <td className="px-3 py-2.5 font-medium text-slate-200 whitespace-nowrap max-w-[200px] truncate">{c.title}</td>
                 <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{c.brand_name}</td>
-                <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap text-[10px]">{c.advertiser_email}</td>
+                <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap text-[10px]" title={c.advertiser_email}>
+                  {c.advertiser_email && c.advertiser_email.length > 22 ? c.advertiser_email.substring(0, 22) + '...' : c.advertiser_email}
+                </td>
+                <td className="px-3 py-2.5">
+                  <AdvertiserRoleToggle userId={c.advertiser_id} role={c.advertiser_role} email={c.advertiser_email} onChanged={load} />
+                </td>
                 <td className="px-3 py-2.5">
                   <span className={`text-[10px] font-medium ${STATE_COLORS[c.state] || 'text-slate-400'}`}>
                     {STATE_LABELS[c.state] || c.state}

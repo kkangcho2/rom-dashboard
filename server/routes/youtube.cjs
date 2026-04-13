@@ -251,18 +251,17 @@ module.exports = function(db) {
     try { return fs.existsSync(COOKIE_PATH); } catch { return false; }
   }
 
-  function ytdlpArgs(extra = []) {
+  // yt-dlp 기본 인자 (쿠키 선택적)
+  function ytdlpArgs(extra = [], opts = {}) {
     const args = ['--no-check-certificates'];
-    if (hasCookies()) {
-      // 쿠키가 있으면 기본 클라이언트 사용 (web_creator 자동 선택됨)
+    if (opts.useCookies !== false && hasCookies()) {
       args.push('--cookies', COOKIE_PATH);
-    } else {
-      // 쿠키 없으면 mweb 클라이언트 시도
-      args.push(
-        '--extractor-args', 'youtube:player_client=mweb',
-        '--user-agent', 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'
-      );
     }
+    // android_vr 클라이언트가 최근 YouTube 제한 우회에 가장 안정적 (yt-dlp 자동 선택과 동일)
+    args.push(
+      '--extractor-args', 'youtube:player_client=default,android_vr,mweb,web_creator,tv_embedded',
+      '--user-agent', 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'
+    );
     return [...args, ...extra];
   }
 
@@ -534,39 +533,76 @@ module.exports = function(db) {
           try { fs.unlinkSync(tmpFile + ext); } catch {}
         }
 
-        const srtText = await new Promise((resolve, reject) => {
-          execFile('yt-dlp', ytdlpArgs([
-            '--write-auto-subs', '--sub-langs', 'ko.*,en.*,ko,en',
-            '--skip-download', '--sub-format', 'srt',
+        // yt-dlp 시도: 쿠키 사용 → 실패 시 쿠키 없이 재시도
+        const runYtdlp = (useCookies) => new Promise((resolve, reject) => {
+          const args = ytdlpArgs([
+            '--write-auto-subs', '--write-subs',
+            '--sub-langs', 'ko.*,en.*,ko,en',
+            '--skip-download', '--sub-format', 'srt/vtt/best',
             '-o', tmpFile,
             `https://www.youtube.com/watch?v=${videoId}`
-          ]), { timeout: 60000 }, (err) => {
-            // 여러 언어 시도 - 파일이 있으면 어떤 것이든 읽기
-            const possibleFiles = [
-              tmpFile + '.ko.srt', tmpFile + '.en.srt',
-              tmpFile + '.ko-orig.srt', tmpFile + '.en-orig.srt',
-            ];
-            // glob으로 확인
+          ], { useCookies });
+          execFile('yt-dlp', args, { timeout: 90000 }, (err, stdout, stderr) => {
             const dir = path.dirname(tmpFile);
             const prefix = path.basename(tmpFile);
             try {
-              const files = fs.readdirSync(dir).filter(f => f.startsWith(prefix) && f.endsWith('.srt'));
+              const files = fs.readdirSync(dir).filter(f =>
+                f.startsWith(prefix) && (f.endsWith('.srt') || f.endsWith('.vtt'))
+              );
               if (files.length > 0) {
-                // 한국어 우선
-                const koFile = files.find(f => f.includes('.ko'));
-                const target = koFile || files[0];
+                // 한국어 원문 → 한국어 번역 → 영어 원문 → 영어 → 첫번째
+                const priority = ['.ko-orig.', '.ko.', '.en-orig.', '.en.'];
+                let target = null;
+                for (const p of priority) {
+                  const f = files.find(x => x.includes(p));
+                  if (f) { target = f; break; }
+                }
+                target = target || files[0];
                 return resolve(fs.readFileSync(path.join(dir, target), 'utf8'));
               }
             } catch {}
-            if (err) return reject(new Error(err.message));
+            if (err) {
+              return reject(new Error((stderr || err.message || 'yt-dlp failed').toString().substring(0, 500)));
+            }
             reject(new Error('자막 파일 없음'));
           });
         });
 
+        let srtText = null;
+        let ytdlpErr = null;
+        // 1차: 쿠키 사용 시도 (있는 경우에만 의미 있음)
+        if (hasCookies()) {
+          try {
+            srtText = await runYtdlp(true);
+            console.log('[Transcript] yt-dlp (with cookies) 성공');
+          } catch (e) {
+            ytdlpErr = 'cookies: ' + e.message.substring(0, 200);
+            console.log('[Transcript] yt-dlp (쿠키) 실패, 쿠키 없이 재시도');
+          }
+        }
+        // 2차: 쿠키 없이 시도 (always)
+        if (!srtText) {
+          try {
+            srtText = await runYtdlp(false);
+            console.log('[Transcript] yt-dlp (no cookies, android_vr) 성공');
+          } catch (e) {
+            throw new Error((ytdlpErr ? ytdlpErr + ' | ' : '') + 'no-cookies: ' + e.message.substring(0, 200));
+          }
+        }
+
+        // SRT 또는 VTT 파싱 (공통: 숫자 인덱스, 타임스탬프, WEBVTT 헤더, 빈 줄 제거)
         const lines = srtText.split('\n').filter(l => {
           l = l.trim();
-          return l && !/^\d+$/.test(l) && !/^\d{2}:\d{2}:\d{2}/.test(l);
-        }).map(l => l.trim());
+          if (!l) return false;
+          if (/^WEBVTT/i.test(l)) return false;
+          if (/^NOTE\b/i.test(l)) return false;
+          if (/^Kind:/i.test(l)) return false;
+          if (/^Language:/i.test(l)) return false;
+          if (/^\d+$/.test(l)) return false;
+          if (/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->/.test(l)) return false;
+          if (/^\d{2}:\d{2}[.,]\d{3}\s*-->/.test(l)) return false;
+          return true;
+        }).map(l => l.trim().replace(/<[^>]+>/g, ''));
 
         const unique = [];
         for (const l of lines) { if (!unique.length || unique[unique.length-1] !== l) unique.push(l); }
