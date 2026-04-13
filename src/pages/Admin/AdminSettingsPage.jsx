@@ -8,6 +8,34 @@ import {
 import { GlassCard } from '../../components/shared';
 import { getSettings, updateSettings, triggerScanNow } from '../../services/admin-automation-api';
 
+// ─── 8 Matching Signals Meta ────────────────────────────────────
+const SIGNAL_META = [
+  { key: 'channel_match', label: '채널 일치', defaultWeight: 0.25,
+    description: '스트림 채널이 계약된 크리에이터의 플랫폼 채널 ID와 정확히 일치하는가. 가장 강한 신호.' },
+  { key: 'target_game_title_match', label: '제목에 타겟 게임명', defaultWeight: 0.20,
+    description: '방송 제목에 캠페인의 target_game 키워드가 포함되어 있는가 (정규화된 문자열 비교).' },
+  { key: 'banner_detected', label: '배너 검출', defaultWeight: 0.15,
+    description: '배너 검증(banner_verifications) 결과가 존재하고 positive confidence인가. 광고 노출 직접 증거.' },
+  { key: 'date_window', label: '방송 기간', defaultWeight: 0.15,
+    description: '방송 시작일이 캠페인 기간 (±2일 버퍼) 내에 있는가. 외부/이전 방송 배제.' },
+  { key: 'detected_game_match', label: '게임 자동 탐지 일치', defaultWeight: 0.10,
+    description: 'game-detection 유틸이 탐지한 게임이 target_game과 일치하는가. 제목 정규화 보조.' },
+  { key: 'sponsor_pattern', label: '광고/협찬 패턴', defaultWeight: 0.08,
+    description: "제목에 '[광고]', '#AD', '유료광고', 'paid promotion' 등 26개 스폰서 패턴이 포함되었는가." },
+  { key: 'transcript_target_mention', label: '자막 내 타겟 언급', defaultWeight: 0.05,
+    description: '영상 자막에 target_game 키워드가 언급된 횟수. 약한 positive signal.' },
+  { key: 'chat_target_mention', label: '채팅 내 타겟 언급', defaultWeight: 0.02,
+    description: '최근 300~500개 채팅 메시지에 키워드 매칭 비율. 매우 약한 보조 신호.' },
+];
+
+function computeWeightSum(customWeights) {
+  let sum = 0;
+  for (const sig of SIGNAL_META) {
+    sum += customWeights[sig.key] != null ? customWeights[sig.key] : sig.defaultWeight;
+  }
+  return sum;
+}
+
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -96,29 +124,93 @@ export default function AdminSettingsPage() {
         </div>
 
         {/* Custom weights */}
-        <div className="mt-4 p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
-          <div className="text-xs text-white font-medium mb-3">매칭 시그널 가중치 커스터마이징</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {['channel_match','date_window','target_game_title_match','detected_game_match','sponsor_pattern','banner_detected','transcript_target_mention','chat_target_mention'].map(sig => (
-              <div key={sig}>
-                <label className="text-[10px] text-slate-400">{sig}</label>
-                <input
-                  type="number" step="0.01" min="0" max="1"
-                  value={customWeights[sig] ?? ''}
-                  placeholder="default"
-                  onChange={e => {
-                    const newWeights = { ...customWeights };
-                    if (e.target.value === '') delete newWeights[sig];
-                    else newWeights[sig] = parseFloat(e.target.value);
-                    updateField('custom_weights_json', JSON.stringify(newWeights));
-                  }}
-                  className="w-full px-2 py-1 rounded bg-[#111827] border border-[#374766]/40 text-[10px] text-white focus:outline-none focus:border-indigo-500/60"
-                />
+        <div className="mt-4 p-4 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-xs text-white font-medium">매칭 시그널 가중치 커스터마이징</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">8개 시그널 합계가 confidence 점수 (0 ~ 1.0). 기본 합계 = 1.0</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[9px] text-slate-500">현재 합계</div>
+              <div className={`text-sm font-bold ${computeWeightSum(customWeights) > 1.05 || computeWeightSum(customWeights) < 0.95 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {computeWeightSum(customWeights).toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          {/* 사용 설명 박스 */}
+          <div className="mb-3 p-3 rounded bg-indigo-500/5 border border-indigo-500/20 text-[10px] text-slate-300 leading-relaxed">
+            <div className="font-bold text-indigo-300 mb-1">📖 사용 설명</div>
+            <ul className="space-y-0.5 list-disc list-inside">
+              <li>각 시그널은 0~1 사이 값으로 가중치를 부여합니다. 합계가 1.0에 가까워야 정상 confidence가 나옵니다.</li>
+              <li>빈 값 (default)은 시스템 기본값을 사용합니다.</li>
+              <li>특정 시그널을 중요하게 여기려면 값을 올리고, 무시하려면 0으로 설정하세요.</li>
+              <li>총 confidence ≥ <b className="text-emerald-400">80%</b> = 자동 매칭 / <b className="text-amber-400">50~80%</b> = 검수 큐 / <b className="text-red-400">&lt; 50%</b> = 거절</li>
+            </ul>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2">
+            {SIGNAL_META.map(sig => (
+              <div key={sig.key} className="flex items-center gap-3 p-2 rounded bg-[#111827]/40 border border-[#374766]/15 hover:border-[#374766]/40 transition">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-white">{sig.label}</span>
+                    <code className="text-[9px] text-slate-500 font-mono">{sig.key}</code>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{sig.description}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[9px] text-slate-600">기본</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{sig.defaultWeight.toFixed(2)}</span>
+                  <span className="text-slate-600">→</span>
+                  <input
+                    type="number" step="0.01" min="0" max="1"
+                    value={customWeights[sig.key] ?? ''}
+                    placeholder={sig.defaultWeight.toFixed(2)}
+                    onChange={e => {
+                      const newWeights = { ...customWeights };
+                      if (e.target.value === '') delete newWeights[sig.key];
+                      else newWeights[sig.key] = parseFloat(e.target.value);
+                      updateField('custom_weights_json', JSON.stringify(newWeights));
+                    }}
+                    className="w-20 px-2 py-1 rounded bg-[#0a0e1a] border border-[#374766]/40 text-[10px] text-white font-mono focus:outline-none focus:border-indigo-500/60"
+                  />
+                </div>
               </div>
             ))}
           </div>
-          <div className="text-[9px] text-slate-600 mt-2">
-            빈 값 = 기본 가중치 사용 (channel:0.25, date:0.15, title:0.20, game:0.10, sponsor:0.08, banner:0.15, transcript:0.05, chat:0.02)
+
+          {/* 프리셋 버튼 */}
+          <div className="mt-3 flex items-center gap-2 pt-3 border-t border-[#374766]/20">
+            <span className="text-[10px] text-slate-500">프리셋:</span>
+            <button
+              onClick={() => updateField('custom_weights_json', '{}')}
+              className="px-2.5 py-1 rounded text-[10px] text-slate-400 hover:text-white hover:bg-[#1a2035] border border-[#374766]/30 transition"
+            >기본값 복원</button>
+            <button
+              onClick={() => updateField('custom_weights_json', JSON.stringify({
+                channel_match: 0.30, date_window: 0.15, target_game_title_match: 0.25,
+                detected_game_match: 0.10, sponsor_pattern: 0.05, banner_detected: 0.10,
+                transcript_target_mention: 0.03, chat_target_mention: 0.02,
+              }))}
+              className="px-2.5 py-1 rounded text-[10px] text-indigo-400 hover:bg-indigo-500/10 border border-indigo-500/20 transition"
+            >제목 중심형</button>
+            <button
+              onClick={() => updateField('custom_weights_json', JSON.stringify({
+                channel_match: 0.20, date_window: 0.10, target_game_title_match: 0.15,
+                detected_game_match: 0.08, sponsor_pattern: 0.07, banner_detected: 0.35,
+                transcript_target_mention: 0.03, chat_target_mention: 0.02,
+              }))}
+              className="px-2.5 py-1 rounded text-[10px] text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/20 transition"
+            >배너 중심형</button>
+            <button
+              onClick={() => updateField('custom_weights_json', JSON.stringify({
+                channel_match: 0.25, date_window: 0.15, target_game_title_match: 0.15,
+                detected_game_match: 0.10, sponsor_pattern: 0.05, banner_detected: 0.10,
+                transcript_target_mention: 0.15, chat_target_mention: 0.05,
+              }))}
+              className="px-2.5 py-1 rounded text-[10px] text-amber-400 hover:bg-amber-500/10 border border-amber-500/20 transition"
+            >콘텐츠 중심형</button>
           </div>
         </div>
       </GlassCard>
