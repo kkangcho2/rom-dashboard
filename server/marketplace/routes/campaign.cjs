@@ -370,6 +370,13 @@ function campaignRoutes(db) {
       'budget_per_creator', 'currency', 'target_game', 'min_avg_viewers', 'max_creators',
       'contract_months', 'broadcasts_per_month', 'hours_per_broadcast',
       'requirements', 'campaign_start_date', 'campaign_end_date'];
+
+    // advertiser_id 변경은 admin만 허용
+    if (req.user.role === 'admin' && req.body.advertiser_id !== undefined) {
+      const target = db.prepare('SELECT id FROM users WHERE id = ?').get(req.body.advertiser_id);
+      if (!target) return res.status(400).json({ error: '대상 광고주를 찾을 수 없습니다' });
+      allowed.push('advertiser_id');
+    }
     const updates = [];
     const params = [];
 

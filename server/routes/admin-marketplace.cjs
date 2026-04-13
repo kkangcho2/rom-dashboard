@@ -409,6 +409,25 @@ module.exports = function (db) {
   // ═══════════════════════════════════════════════════════════
 
   // 전체 캠페인 목록 (관리자)
+  // 광고주 후보 (advertiser/admin role 유저 목록)
+  router.get('/advertiser-candidates', (req, res) => {
+    try {
+      const users = db.prepare(`
+        SELECT id, email, name, role, company
+        FROM users
+        WHERE role IN ('admin', 'advertiser', 'paid_user')
+          AND status = 'active'
+        ORDER BY
+          CASE role WHEN 'advertiser' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+          email
+        LIMIT 200
+      `).all();
+      res.json({ ok: true, users });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.get('/campaigns', (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(parseInt(req.query.limit) || 20, 100);

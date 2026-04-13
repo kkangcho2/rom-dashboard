@@ -634,6 +634,17 @@ function CampaignsTab() {
   // 캠페인 정보 수정 모달
   const [editCampaign, setEditCampaign] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
+  const [advertiserCandidates, setAdvertiserCandidates] = useState([]);
+
+  // 모달 열릴 때 광고주 후보 목록 로드
+  useEffect(() => {
+    if (editCampaign && advertiserCandidates.length === 0) {
+      authFetch('/admin/marketplace/advertiser-candidates')
+        .then(r => r.json())
+        .then(j => setAdvertiserCandidates(j.users || []))
+        .catch(() => {});
+    }
+  }, [editCampaign]);
 
   const handleEditSave = async () => {
     if (!editCampaign) return;
@@ -645,6 +656,7 @@ function CampaignsTab() {
         description: editCampaign.description,
         target_game: editCampaign.target_game,
         product_url: editCampaign.product_url,
+        advertiser_id: parseInt(editCampaign.advertiser_id) || undefined,
         budget_min: parseInt(editCampaign.budget_min) || 0,
         budget_max: parseInt(editCampaign.budget_max) || 0,
         budget_per_creator: parseInt(editCampaign.budget_per_creator) || 0,
@@ -936,6 +948,30 @@ function CampaignsTab() {
               <button onClick={() => setEditCampaign(null)} className="text-slate-500 hover:text-white text-lg">×</button>
             </div>
             <div className="p-5 space-y-3">
+              {/* 광고주 선택 */}
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1 flex items-center gap-2">
+                  <UserCheck size={11} className="text-cyan-400" /> 광고주 (advertiser)
+                </label>
+                <select
+                  value={editCampaign.advertiser_id || ''}
+                  onChange={e => setEditCampaign(c => ({ ...c, advertiser_id: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                >
+                  <option value={editCampaign.advertiser_id || ''}>
+                    현재: {editCampaign.advertiser_email || editCampaign.advertiser_id || '-'}
+                  </option>
+                  {advertiserCandidates.map(u => (
+                    <option key={u.id} value={u.id}>
+                      [{u.role === 'admin' ? '관리자' : u.role === 'advertiser' ? '담당자' : u.role}] {u.name ? u.name + ' · ' : ''}{u.email}{u.company ? ' · ' + u.company : ''}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[9px] text-slate-600 mt-1">
+                  광고주 변경은 관리자만 가능. 캠페인 담당자(advertiser) 권한이 있는 유저를 우선 표시합니다.
+                </div>
+              </div>
+
               {[
                 { key: 'title', label: '제목', type: 'text' },
                 { key: 'brand_name', label: '브랜드명', type: 'text' },
