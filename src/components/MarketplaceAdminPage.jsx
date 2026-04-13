@@ -631,6 +631,47 @@ function CampaignsTab() {
   const [creatorSearch, setCreatorSearch] = useState('');
   const [creatorResults, setCreatorResults] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
+  // 캠페인 정보 수정 모달
+  const [editCampaign, setEditCampaign] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
+
+  const handleEditSave = async () => {
+    if (!editCampaign) return;
+    setEditLoading(true);
+    try {
+      const body = {
+        title: editCampaign.title,
+        brand_name: editCampaign.brand_name,
+        description: editCampaign.description,
+        target_game: editCampaign.target_game,
+        product_url: editCampaign.product_url,
+        budget_min: parseInt(editCampaign.budget_min) || 0,
+        budget_max: parseInt(editCampaign.budget_max) || 0,
+        budget_per_creator: parseInt(editCampaign.budget_per_creator) || 0,
+        currency: editCampaign.currency || 'KRW',
+        min_avg_viewers: parseInt(editCampaign.min_avg_viewers) || 0,
+        max_creators: parseInt(editCampaign.max_creators) || 1,
+        contract_months: parseInt(editCampaign.contract_months) || 1,
+        broadcasts_per_month: parseInt(editCampaign.broadcasts_per_month) || 0,
+        hours_per_broadcast: parseFloat(editCampaign.hours_per_broadcast) || 0,
+        requirements: editCampaign.requirements || '',
+        campaign_start_date: editCampaign.campaign_start_date || null,
+        campaign_end_date: editCampaign.campaign_end_date || null,
+      };
+      const res = await authFetch(`/marketplace/campaigns/${editCampaign.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (j.success || j.ok) {
+        setEditCampaign(null);
+        load();
+      } else {
+        alert('수정 실패: ' + (j.error || 'unknown'));
+      }
+    } catch (e) { alert('수정 실패: ' + e.message); }
+    setEditLoading(false);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -865,13 +906,19 @@ function CampaignsTab() {
                   </button>
                 </td>
                 <td className="px-3 py-2.5">
-                  <select value="" onChange={e => { if (e.target.value) handleForceState(c.id, c.title, e.target.value); }}
-                    className="bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-[10px] text-slate-400 cursor-pointer">
-                    <option value="">상태 변경</option>
-                    {Object.entries(STATE_LABELS).filter(([k]) => k !== c.state).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setEditCampaign({ ...c })}
+                      className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 text-[10px] hover:bg-indigo-500/20 transition">
+                      수정
+                    </button>
+                    <select value="" onChange={e => { if (e.target.value) handleForceState(c.id, c.title, e.target.value); }}
+                      className="bg-dark-800 border border-dark-600 rounded px-1 py-0.5 text-[10px] text-slate-400 cursor-pointer">
+                      <option value="">상태 변경</option>
+                      {Object.entries(STATE_LABELS).filter(([k]) => k !== c.state).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -880,6 +927,97 @@ function CampaignsTab() {
       </div>
 
       {/* ═══ Campaign Detail Modal ═══ */}
+      {/* ═══ Campaign Edit Modal ═══ */}
+      {editCampaign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setEditCampaign(null)}>
+          <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-full max-w-[700px] max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 p-5 border-b border-dark-600/30 bg-dark-800/95 backdrop-blur-xl rounded-t-2xl flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">캠페인 정보 수정</h3>
+              <button onClick={() => setEditCampaign(null)} className="text-slate-500 hover:text-white text-lg">×</button>
+            </div>
+            <div className="p-5 space-y-3">
+              {[
+                { key: 'title', label: '제목', type: 'text' },
+                { key: 'brand_name', label: '브랜드명', type: 'text' },
+                { key: 'target_game', label: '타겟 게임', type: 'text' },
+                { key: 'description', label: '설명', type: 'textarea' },
+                { key: 'product_url', label: '제품 URL', type: 'text' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-[10px] text-slate-400 block mb-1">{f.label}</label>
+                  {f.type === 'textarea' ? (
+                    <textarea
+                      value={editCampaign[f.key] || ''}
+                      onChange={e => setEditCampaign(c => ({ ...c, [f.key]: e.target.value }))}
+                      rows={3}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={editCampaign[f.key] || ''}
+                      onChange={e => setEditCampaign(c => ({ ...c, [f.key]: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                    />
+                  )}
+                </div>
+              ))}
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'budget_min', label: '예산 최소', type: 'number' },
+                  { key: 'budget_max', label: '예산 최대', type: 'number' },
+                  { key: 'budget_per_creator', label: '크리에이터당 예산', type: 'number' },
+                  { key: 'currency', label: '통화', type: 'text' },
+                  { key: 'min_avg_viewers', label: '최소 평균 시청자', type: 'number' },
+                  { key: 'max_creators', label: '최대 크리에이터 수', type: 'number' },
+                  { key: 'contract_months', label: '계약 개월', type: 'number' },
+                  { key: 'broadcasts_per_month', label: '월 방송 횟수', type: 'number' },
+                  { key: 'hours_per_broadcast', label: '회당 방송 시간', type: 'number' },
+                  { key: 'campaign_start_date', label: '시작일', type: 'date' },
+                  { key: 'campaign_end_date', label: '종료일', type: 'date' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="text-[10px] text-slate-400 block mb-1">{f.label}</label>
+                    <input
+                      type={f.type}
+                      value={(f.type === 'date' ? (editCampaign[f.key] || '').slice(0, 10) : editCampaign[f.key] ?? '')}
+                      onChange={e => setEditCampaign(c => ({ ...c, [f.key]: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1">요구사항</label>
+                <textarea
+                  value={editCampaign.requirements || ''}
+                  onChange={e => setEditCampaign(c => ({ ...c, requirements: e.target.value }))}
+                  rows={3}
+                  className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                />
+              </div>
+            </div>
+            <div className="sticky bottom-0 p-4 border-t border-dark-600/30 bg-dark-800/95 flex items-center gap-2">
+              <button
+                onClick={handleEditSave}
+                disabled={editLoading}
+                className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/25 disabled:opacity-50"
+              >
+                {editLoading ? '저장 중...' : '저장'}
+              </button>
+              <button
+                onClick={() => setEditCampaign(null)}
+                className="px-4 py-2 rounded-lg text-xs text-slate-400 hover:text-white border border-[#374766]/30"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedCampaign && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setSelectedCampaign(null)}>
           <div className="bg-dark-800 border border-dark-600/50 rounded-2xl w-full max-w-[1100px] max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>

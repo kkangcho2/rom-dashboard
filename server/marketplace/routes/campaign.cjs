@@ -367,6 +367,8 @@ function campaignRoutes(db) {
     }
 
     const allowed = ['title', 'description', 'brand_name', 'product_url', 'budget_min', 'budget_max',
+      'budget_per_creator', 'currency', 'target_game', 'min_avg_viewers', 'max_creators',
+      'contract_months', 'broadcasts_per_month', 'hours_per_broadcast',
       'requirements', 'campaign_start_date', 'campaign_end_date'];
     const updates = [];
     const params = [];
