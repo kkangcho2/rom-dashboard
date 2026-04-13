@@ -728,9 +728,9 @@ export default function CreatorSearch() {
             <button onClick={() => navigate('/marketplace')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
               <Target size={13} /> 마켓플레이스
             </button>
-            {userRole === 'admin' && (
+            {(userRole === 'admin' || userRole === 'advertiser') && (
               <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-dark-600/60 transition-all">
-                <User size={13} /> 관리콘솔
+                <User size={13} /> {userRole === 'advertiser' ? '캠페인 콘솔' : '관리콘솔'}
               </button>
             )}
           </nav>
