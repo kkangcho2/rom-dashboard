@@ -11,7 +11,7 @@
 
 const db = require('../db.cjs');
 const jobQueue = require('./job-queue.cjs');
-const reportPipeline = require('./report-pipeline.cjs');
+const ReportPipeline = require('./report-pipeline.cjs');
 const emailService = require('./email.cjs');
 
 // Phase 2 — Stream Monitor (loaded lazily to avoid circular deps)
@@ -87,8 +87,30 @@ async function handleMatchCampaignBroadcast(job) {
  * Phase 1: Generate campaign report — delegate to report pipeline.
  */
 async function handleGenerateCampaignReport(job) {
-  const { campaignId } = job.payload;
-  return await reportPipeline.generateDeliveryReport(campaignId);
+  const { campaignId } = job.payload || {};
+  if (!campaignId) {
+    throw new Error('handleGenerateCampaignReport: payload.campaignId required');
+  }
+
+  const campaign = db
+    .prepare('SELECT id, title FROM campaigns WHERE id = ?')
+    .get(campaignId);
+  if (!campaign) {
+    throw new Error(`handleGenerateCampaignReport: campaign not found (${campaignId})`);
+  }
+
+  const { reportId } = await ReportPipeline.generateDeliveryReport({ campaignId });
+
+  console.log(
+    `[Orchestrator] generate_campaign_report done: campaign="${campaign.title}" reportId=${reportId}`
+  );
+
+  return {
+    ok: true,
+    action: 'generate_campaign_report',
+    campaignId,
+    reportId,
+  };
 }
 
 /**
