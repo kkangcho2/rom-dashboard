@@ -235,19 +235,29 @@ export default function DailyReportPage({ inline = false }) {
     setDrStatus('Transcript 가져오는 중...');
     setDrStatusColor('text-amber-400');
     try {
+      // 1) 서버 사이드 시도 (innertube + watch-html + timedtext + yt-dlp)
       const data = await fetchYtTranscript(drUrl);
       if (data.ok) {
         setDrTranscript(data.transcript);
         setDrStatus(`Transcript 완료 (${data.lines}줄)`);
         setDrStatusColor('text-green-400');
-      } else if (data.needManualInput) {
-        setDrStatus('자동 추출 실패 - 수동 입력 가능');
-        setDrStatusColor('text-amber-400');
-        setManualInput({ show: true, type: 'transcript', text: '', targetVideoId: null });
-      } else {
-        setDrStatus('Transcript 실패: ' + data.error);
-        setDrStatusColor('text-red-400');
+        return;
       }
+      // 2) 서버 실패 (봇 차단 등) → 수동 입력 모달 자동 오픈 + 북마클릿 안내
+      const reason = data.error || (data.details?.[0] || '알 수 없는 사유');
+      const isBlocked = /bot|cookie|sign in|invalid/i.test(JSON.stringify(data.details || []));
+      setDrStatus(isBlocked
+        ? '⚠ YouTube 봇 차단으로 자동 추출 불가 — 북마클릿 사용 또는 수동 입력'
+        : '자동 추출 실패 - 수동 입력 가능');
+      setDrStatusColor('text-amber-400');
+      setManualInput({
+        show: true,
+        type: 'transcript',
+        text: '',
+        targetVideoId: null,
+        reason,
+        isBotBlocked: isBlocked,
+      });
     } catch { setDrStatus('서버 연결 실패'); setDrStatusColor('text-red-400'); }
   };
 
@@ -1770,6 +1780,38 @@ export default function DailyReportPage({ inline = false }) {
                 ? '유튜브 영상의 자막을 복사해서 붙여넣어 주세요. (유튜브 자막 버튼 > 자막 텍스트 복사)'
                 : '라이브 채팅 내용을 복사해서 붙여넣어 주세요. (닉네임: 메시지 형식)'}
             </p>
+
+            {/* 봇 차단으로 인한 실패 시 북마클릿 안내 */}
+            {manualInput.isBotBlocked && manualInput.type === 'transcript' && (
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <div className="text-[11px] text-amber-300 font-bold">🤖 YouTube 봇 차단 감지</div>
+                <div className="text-[10px] text-slate-300 leading-relaxed">
+                  서버에서 자동 추출이 차단되었습니다. 아래 두 방법 중 하나로 자막을 가져오세요:
+                </div>
+                <div className="text-[10px] text-slate-300 space-y-1.5">
+                  <div className="font-bold text-amber-200">방법 1: YouTube 트랜스크립트 패널 (가장 빠름)</div>
+                  <ol className="ml-3 list-decimal space-y-0.5 text-slate-400">
+                    <li>YouTube 영상 페이지 열기 (브라우저)</li>
+                    <li>설명 영역의 <b className="text-slate-200">"... 더보기"</b> → <b className="text-slate-200">"스크립트 표시"</b> 클릭</li>
+                    <li>오른쪽 패널의 자막 텍스트 전체 선택 → 복사 (Ctrl+A, Ctrl+C)</li>
+                    <li>아래 입력란에 붙여넣기 (Ctrl+V)</li>
+                  </ol>
+                </div>
+                <div className="text-[10px] text-slate-300 space-y-1.5 pt-2 border-t border-amber-500/20">
+                  <div className="font-bold text-amber-200">방법 2: 북마클릿 (한 번 등록하면 한 클릭)</div>
+                  <div className="text-[9px] text-slate-500">아래 링크를 북마크 바로 끌어다 놓으세요. YouTube 영상 페이지에서 클릭하면 자막이 자동으로 클립보드에 복사됩니다.</div>
+                  <a
+                    href={`javascript:(async()=>{try{const r=await fetch(location.href,{credentials:'include'});const h=await r.text();const m=h.match(/(?:var\\s+)?ytInitialPlayerResponse\\s*=\\s*(\\{)/);if(!m)return alert('player response 없음');let i=m.index+m[0].length-1,d=0,s=false,e=false;for(;i<h.length;i++){const c=h[i];if(e){e=false;continue;}if(c==='\\\\'&&s){e=true;continue;}if(c==='"')s=!s;else if(!s){if(c==='{')d++;else if(c==='}'){d--;if(d===0){i++;break;}}}}const j=JSON.parse(h.substring(m.index+m[0].length-1,i));const t=j.captions?.playerCaptionsTracklistRenderer?.captionTracks;if(!t||!t.length)return alert('자막 트랙 없음');const k=t.find(x=>x.languageCode==='ko'&&x.kind!=='asr')||t.find(x=>x.languageCode==='ko')||t[0];const u=k.baseUrl+(k.baseUrl.includes('fmt=')?'':'&fmt=json3');const cr=await fetch(u);const cd=await cr.json();const parts=[];for(const ev of(cd.events||[])){if(!ev.segs)continue;const ln=ev.segs.map(s=>s.utf8).join('').replace(/\\n/g,' ').trim();if(ln)parts.push(ln);}const txt=parts.join(' ').replace(/\\s+/g,' ').trim();await navigator.clipboard.writeText(txt);alert('자막 '+txt.length+'자 복사 완료! LivedPulse에 붙여넣으세요.');}catch(e){alert('실패: '+e.message);}})();`}
+                    onClick={(e) => { e.preventDefault(); alert('이 링크를 북마크 바에 끌어다 놓으세요 (드래그). 그 후 YouTube 영상 페이지에서 북마크를 클릭하면 됩니다.'); }}
+                    className="inline-block px-3 py-1.5 rounded bg-amber-500/30 text-amber-200 text-[10px] font-bold border border-amber-500/40 hover:bg-amber-500/40 cursor-grab"
+                    draggable
+                    title="이 링크를 북마크 바에 드래그"
+                  >
+                    📌 LivedPulse 자막 추출 (북마크에 드래그)
+                  </a>
+                </div>
+              </div>
+            )}
             <textarea
               rows={10}
               placeholder={manualInput.type === 'transcript'
