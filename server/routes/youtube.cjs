@@ -259,7 +259,7 @@ module.exports = function(db) {
     }
     // android_vr 클라이언트가 최근 YouTube 제한 우회에 가장 안정적 (yt-dlp 자동 선택과 동일)
     args.push(
-      '--extractor-args', 'youtube:player_client=default,android_vr,mweb,web_creator,tv_embedded',
+      '--extractor-args', 'youtube:player_client=default,android_vr,mweb,web_creator',
       '--user-agent', 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'
     );
     return [...args, ...extra];
