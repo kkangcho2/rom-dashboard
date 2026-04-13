@@ -36,7 +36,7 @@ function stmts() {
       SET status = 'running', locked_at = datetime('now'), locked_by = @workerId, attempts = attempts + 1, updated_at = datetime('now')
       WHERE id = (
         SELECT id FROM job_queue
-        WHERE status = 'pending' AND run_at <= datetime('now')
+        WHERE status = 'pending' AND datetime(run_at) <= datetime('now')
         ORDER BY priority DESC, created_at ASC
         LIMIT 1
       )
@@ -83,7 +83,12 @@ function enqueue({ jobType, payload = {}, priority = 0, runAt = null, dedupeKey 
   if (!jobType) throw new Error('jobType is required');
 
   const payloadJson = JSON.stringify(payload);
-  const finalRunAt = runAt || new Date().toISOString();
+  // SQLite datetime 비교 호환을 위해 ISO 포맷 → 'YYYY-MM-DD HH:MM:SS' 변환
+  const toSqliteDt = (iso) => {
+    if (!iso) return new Date().toISOString().replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+    return new Date(iso).toISOString().replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+  };
+  const finalRunAt = toSqliteDt(runAt);
   const finalDedupeKey = dedupeKey || null;
 
   const result = stmts().enqueue.run({

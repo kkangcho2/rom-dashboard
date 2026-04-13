@@ -605,6 +605,15 @@ try {
 // Periodic scan interval (min). default 60min
 try { db.prepare("ALTER TABLE system_settings ADD COLUMN scan_interval_min INTEGER DEFAULT 60").run(); } catch {}
 
+// 기존 ISO 포맷 run_at → SQLite datetime 포맷으로 일괄 정규화 (한 번만 실행)
+try {
+  db.exec(`
+    UPDATE job_queue
+    SET run_at = REPLACE(REPLACE(SUBSTR(run_at, 1, 19), 'T', ' '), 'Z', '')
+    WHERE run_at LIKE '%T%' OR run_at LIKE '%Z'
+  `);
+} catch (e) { console.warn('[DB] job_queue run_at normalize failed:', e.message); }
+
 // System health check history
 try {
   db.exec(`
