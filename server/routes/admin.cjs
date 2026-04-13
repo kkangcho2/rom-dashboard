@@ -47,6 +47,34 @@ module.exports = function (db) {
     res.json({ ok: true, user });
   });
 
+  // ─── 유저 기본 정보 수정 ──────────────────────────────────
+  router.put('/users/:id', (req, res) => {
+    const allowed = ['name', 'email', 'phone', 'company', 'department', 'plan'];
+    const updates = [];
+    const params = [];
+    for (const f of allowed) {
+      if (req.body[f] !== undefined) {
+        updates.push(`${f} = ?`);
+        params.push(req.body[f]);
+      }
+    }
+    if (updates.length === 0) return res.status(400).json({ error: '수정할 필드가 없습니다' });
+
+    const target = db.prepare('SELECT id, email FROM users WHERE id = ?').get(req.params.id);
+    if (!target) return res.status(404).json({ error: '유저를 찾을 수 없습니다' });
+
+    // 이메일 중복 체크
+    if (req.body.email && req.body.email !== target.email) {
+      const dup = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(req.body.email, req.params.id);
+      if (dup) return res.status(400).json({ error: '이미 사용 중인 이메일입니다' });
+    }
+
+    params.push(req.params.id);
+    db.prepare(`UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(...params);
+    console.log(`[Admin] 유저 정보 수정: ${target.email} (by ${req.user.email})`);
+    res.json({ ok: true, updated: updates.length });
+  });
+
   // ─── 역할 변경 (테스터 지정 등) ───────────────────────────
   router.put('/users/:id/role', (req, res) => {
     const { role } = req.body;

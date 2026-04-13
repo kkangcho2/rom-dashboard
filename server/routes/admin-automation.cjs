@@ -365,6 +365,120 @@ module.exports = function (db) {
     }
   });
 
+  // Creator 정보 수정 (어드민 전용, 모든 필드 지원)
+  router.put('/creators/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+
+      const existing = db.prepare('SELECT id FROM creator_profiles WHERE id = ?').get(req.params.id);
+      if (!existing) return res.status(404).json({ error: '크리에이터 없음' });
+
+      const allowed = [
+        'display_name', 'bio', 'categories', 'languages',
+        'verified_viewer_badge', 'engagement_grade',
+        'avg_concurrent_viewers', 'peak_viewers', 'subscriber_count',
+        'total_streams_analyzed', 'total_campaigns_completed',
+        'portfolio_url', 'mediakit_pdf_url', 'thumbnail_url',
+        'youtube_channel_id', 'chzzk_channel_id', 'afreeca_channel_id', 'twitch_channel_id',
+        'youtube_verified', 'chzzk_verified', 'afreeca_verified', 'twitch_verified',
+        'trust_score', 'top_games_json', 'audience_keywords_json',
+        'active_hours_json', 'internal_quality_flags', 'visibility_settings',
+      ];
+      const updates = [];
+      const params = [];
+      for (const f of allowed) {
+        if (req.body[f] !== undefined) {
+          updates.push(`${f} = ?`);
+          params.push(req.body[f]);
+        }
+      }
+      if (updates.length === 0) return res.status(400).json({ error: '수정할 필드가 없습니다' });
+
+      params.push(req.params.id);
+      db.prepare(
+        `UPDATE creator_profiles SET ${updates.join(', ')}, updated_at = datetime('now') WHERE id = ?`
+      ).run(...params);
+
+      res.json({ ok: true, updated: updates.length });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Creator 채널 정보 재크롤링 (구독자/썸네일/이름 새로 가져옴)
+  router.post('/creators/:id/refresh-channel', async (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+
+      const creator = db.prepare(
+        'SELECT id, display_name, youtube_channel_id, chzzk_channel_id, afreeca_channel_id FROM creator_profiles WHERE id = ?'
+      ).get(req.params.id);
+      if (!creator) return res.status(404).json({ error: '크리에이터 없음' });
+
+      const updates = {};
+      const results = [];
+
+      // YouTube
+      if (creator.youtube_channel_id) {
+        try {
+          const youtube = require('../crawlers/youtube.cjs');
+          const info = await youtube.crawlChannelInfo(
+            `https://www.youtube.com/channel/${creator.youtube_channel_id}`
+          );
+          if (info?.subscribers > 0) {
+            updates.subscriber_count = info.subscribers;
+            results.push({ platform: 'youtube', subscribers: info.subscribers, name: info.name });
+          }
+          if (info?.thumbnail) updates.thumbnail_url = info.thumbnail;
+        } catch (e) {
+          results.push({ platform: 'youtube', error: e.message });
+        }
+      }
+
+      // Chzzk
+      if (creator.chzzk_channel_id) {
+        try {
+          const chzzk = require('../crawlers/chzzk.cjs');
+          const info = await chzzk.crawlChannelInfo(creator.chzzk_channel_id);
+          if (info?.followerCount > 0) {
+            // Chzzk 팔로워도 업데이트 대상이면 반영
+            if (!updates.subscriber_count) updates.subscriber_count = info.followerCount;
+            results.push({ platform: 'chzzk', followers: info.followerCount, name: info.channelName });
+          }
+        } catch (e) {
+          results.push({ platform: 'chzzk', error: e.message });
+        }
+      }
+
+      // AfreecaTV
+      if (creator.afreeca_channel_id) {
+        try {
+          const afreeca = require('../crawlers/afreeca.cjs');
+          const info = await afreeca.crawlBjInfo(creator.afreeca_channel_id);
+          if (info?.followers > 0) {
+            if (!updates.subscriber_count) updates.subscriber_count = info.followers;
+            results.push({ platform: 'afreeca', followers: info.followers, name: info.nickname });
+          }
+        } catch (e) {
+          results.push({ platform: 'afreeca', error: e.message });
+        }
+      }
+
+      // DB 업데이트
+      if (Object.keys(updates).length > 0) {
+        const fields = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+        const params = [...Object.values(updates), req.params.id];
+        db.prepare(
+          `UPDATE creator_profiles SET ${fields}, updated_at = datetime('now') WHERE id = ?`
+        ).run(...params);
+      }
+
+      res.json({ ok: true, updated: Object.keys(updates), results });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Creator 상세
   router.get('/creators/:id', (req, res) => {
     try {

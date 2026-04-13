@@ -5,7 +5,7 @@ import {
   Shield, UserCheck, Search, RefreshCw, Activity, Megaphone, Briefcase, User
 } from 'lucide-react';
 import { GlassCard } from './shared';
-import { getAdminUsers, updateUserRole, updateUserStatus, getStats } from '../services/api';
+import { getAdminUsers, updateUser, updateUserRole, updateUserStatus, getStats } from '../services/api';
 import { authFetch } from '../store/useAuthStore';
 
 const ROLE_LABELS = {
@@ -27,6 +27,12 @@ const ROLE_COLORS = {
 const STATUS_COLORS = { active: 'bg-green-500/20 text-green-400', suspended: 'bg-red-500/20 text-red-400' };
 const STATUS_LABELS = { active: '활성', suspended: '정지' };
 
+function truncateEmail(email, max = 28) {
+  if (!email) return '-';
+  if (email.length <= max) return email;
+  return email.substring(0, max) + '...';
+}
+
 export default function SuperAdminPage() {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +40,7 @@ export default function SuperAdminPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState(null);
   const [usageData, setUsageData] = useState(null);
+  const [editUser, setEditUser] = useState(null); // { id, name, email, phone, company, department, plan }
 
   // 데이터 로드
   const loadData = async () => {
@@ -69,6 +76,26 @@ export default function SuperAdminPage() {
     const result = await updateUserStatus(userId, newStatus);
     if (result.ok) loadData();
     setActionOpen(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!editUser) return;
+    try {
+      const result = await updateUser(editUser.id, {
+        name: editUser.name,
+        email: editUser.email,
+        phone: editUser.phone,
+        company: editUser.company,
+        department: editUser.department,
+        plan: editUser.plan,
+      });
+      if (result.ok) {
+        setEditUser(null);
+        loadData();
+      } else {
+        alert(result.error || '저장 실패');
+      }
+    } catch (e) { alert('저장 실패: ' + e.message); }
   };
 
   const filtered = searchQuery
@@ -143,16 +170,18 @@ export default function SuperAdminPage() {
                   <tr key={m.id} className={`border-t border-[#374766]/20 hover:bg-[#1a2035]/30 ${i % 2 ? 'bg-[#1a2035]/10' : ''}`}>
                     <td className="px-3 py-2.5 text-slate-500 text-[10px] whitespace-nowrap">{m.created_at?.split(' ')[0]}</td>
                     <td className="px-3 py-2.5 text-slate-200 font-medium whitespace-nowrap">{m.name || '-'}</td>
-                    <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{m.email}</td>
+                    <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap" title={m.email}>
+                      {truncateEmail(m.email, 28)}
+                    </td>
                     <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{m.phone || '-'}</td>
                     <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{[m.company, m.department].filter(Boolean).join(' / ') || '-'}</td>
                     <td className="px-3 py-2.5 text-center">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${ROLE_COLORS[m.role] || ROLE_COLORS.free_viewer}`}>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${ROLE_COLORS[m.role] || ROLE_COLORS.free_viewer}`}>
                         {ROLE_LABELS[m.role] || m.role}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[m.status] || STATUS_COLORS.active}`}>
+                    <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap inline-block min-w-[40px] ${STATUS_COLORS[m.status] || STATUS_COLORS.active}`}>
                         {STATUS_LABELS[m.status] || m.status}
                       </span>
                     </td>
@@ -165,10 +194,15 @@ export default function SuperAdminPage() {
                         </button>
                         {actionOpen === m.id && (
                           <div className="absolute right-0 top-7 z-20 w-44 bg-[#1a2035] border border-[#374766]/50 rounded-xl shadow-2xl overflow-hidden">
+                            {/* 정보 수정 (이름/이메일/회사/부서/전화/plan) */}
+                            <button onClick={() => { setEditUser({ ...m }); setActionOpen(null); }}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30">
+                              <Edit3 size={12} className="text-indigo-400" /> 정보 수정
+                            </button>
                             {/* 캠페인 담당자 지정/해제 (광고주/대행사) */}
                             {m.role !== 'admin' && (
                               <button onClick={() => handleRoleChange(m.id, m.role === 'advertiser' ? 'free_viewer' : 'advertiser')}
-                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30">
+                                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-[#374766]/30 border-t border-[#374766]/30">
                                 <Megaphone size={12} className="text-cyan-400" />
                                 {m.role === 'advertiser' ? '담당자 해제' : '캠페인 담당자 지정'}
                               </button>
@@ -220,6 +254,50 @@ export default function SuperAdminPage() {
         )}
         {actionOpen && <div className="fixed inset-0 z-10" onClick={() => setActionOpen(null)} />}
       </GlassCard>
+
+      {/* 유저 정보 수정 모달 */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEditUser(null)}>
+          <div className="bg-[#0f1629] border border-[#374766]/50 rounded-xl p-5 w-[480px] max-w-[90vw]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Edit3 size={14} className="text-indigo-400" /> 유저 정보 수정
+              </h3>
+              <button onClick={() => setEditUser(null)} className="p-1 rounded hover:bg-[#1a2035]">
+                <UserX size={14} className="text-slate-500" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {[
+                { key: 'name', label: '이름' },
+                { key: 'email', label: '이메일', type: 'email' },
+                { key: 'phone', label: '연락처' },
+                { key: 'company', label: '회사' },
+                { key: 'department', label: '부서' },
+                { key: 'plan', label: '플랜 (Free/Pro/Enterprise 등)' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="text-[10px] text-slate-400 block mb-1">{f.label}</label>
+                  <input
+                    type={f.type || 'text'}
+                    value={editUser[f.key] || ''}
+                    onChange={e => setEditUser(u => ({ ...u, [f.key]: e.target.value }))}
+                    className="w-full px-2.5 py-1.5 rounded bg-[#1a2035] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-5 pt-3 border-t border-[#374766]/20">
+              <button onClick={handleEditSave} className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/25">
+                저장
+              </button>
+              <button onClick={() => setEditUser(null)} className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white border border-[#374766]/30">
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 유저별 사용량 */}
       {usageData?.byUser?.length > 0 && (

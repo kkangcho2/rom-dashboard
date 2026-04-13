@@ -41,6 +41,8 @@ export const getCreators = (params = {}) => {
   return fetchJson(`/creators${q ? `?${q}` : ''}`);
 };
 export const getCreatorDetail = (id) => fetchJson(`/creators/${id}`);
+export const updateCreator = (id, body) => fetchJson(`/creators/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+export const refreshCreatorChannel = (id) => post(`/creators/${id}/refresh-channel`);
 
 // ─── Settings ───────────────────────────────────────────────
 export const getSettings = () => fetchJson('/settings');

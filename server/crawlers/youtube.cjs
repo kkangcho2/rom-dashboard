@@ -90,6 +90,18 @@ async function crawlVideoInfo(url, onProgress) {
       else subscribers = Math.round(num);
     }
   }
+  if (!subscribers) {
+    // Fallback: 평문 "구독자 5.05만명"
+    const plainKo = html.match(/구독자\s*([\d.,]+)\s*([만천억]?)명/);
+    if (plainKo) {
+      const num = parseFloat(plainKo[1].replace(/,/g, ''));
+      const unit = plainKo[2];
+      if (unit === '억') subscribers = Math.round(num * 100000000);
+      else if (unit === '만') subscribers = Math.round(num * 10000);
+      else if (unit === '천') subscribers = Math.round(num * 1000);
+      else subscribers = Math.round(num);
+    }
+  }
 
   // Extract liveStreamingDetails from page source
   let actualStartTime = null, actualEndTime = null, concurrentViewers = null, isLive = false;
@@ -275,6 +287,30 @@ async function crawlChannelInfo(channelUrl) {
       const num = parseFloat(enMatch[1].replace(/,/g, ''));
       const unit = (enMatch[2] || '').toUpperCase();
       if (unit === 'M') subscribers = Math.round(num * 1000000);
+      else if (unit === 'K') subscribers = Math.round(num * 1000);
+      else subscribers = Math.round(num);
+    }
+  }
+  // Fallback: 최근 YouTube 응답 변경 대응 — 평문 "구독자 5.05만명" 등
+  if (!subscribers) {
+    const plainKo = html.match(/구독자\s*([\d.,]+)\s*([만천억]?)명/);
+    if (plainKo) {
+      const num = parseFloat(plainKo[1].replace(/,/g, ''));
+      const unit = plainKo[2];
+      if (unit === '억') subscribers = Math.round(num * 100000000);
+      else if (unit === '만') subscribers = Math.round(num * 10000);
+      else if (unit === '천') subscribers = Math.round(num * 1000);
+      else subscribers = Math.round(num);
+    }
+  }
+  // Fallback: "5.05M subscribers" 평문
+  if (!subscribers) {
+    const plainEn = html.match(/([\d.,]+)\s*([MKBmkb])?\s*subscribers/);
+    if (plainEn) {
+      const num = parseFloat(plainEn[1].replace(/,/g, ''));
+      const unit = (plainEn[2] || '').toUpperCase();
+      if (unit === 'B') subscribers = Math.round(num * 1000000000);
+      else if (unit === 'M') subscribers = Math.round(num * 1000000);
       else if (unit === 'K') subscribers = Math.round(num * 1000);
       else subscribers = Math.round(num);
     }

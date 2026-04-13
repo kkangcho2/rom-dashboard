@@ -311,7 +311,9 @@ function CreatorsTab() {
               return (
                 <tr key={c.id} className={`border-t border-dark-500/20 hover:bg-dark-700/30 ${i % 2 ? 'bg-dark-700/10' : ''}`}>
                   <td className="px-3 py-2.5 font-medium text-slate-200 whitespace-nowrap">{c.display_name}</td>
-                  <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap">{c.email}</td>
+                  <td className="px-3 py-2.5 text-slate-400 whitespace-nowrap" title={c.email}>
+                    {c.email && c.email.length > 28 ? c.email.substring(0, 28) + '...' : (c.email || '-')}
+                  </td>
                   <td className="px-3 py-2.5">
                     {isEditing ? (
                       <select value={editData.engagement_grade ?? c.engagement_grade ?? ''} onChange={e => setEditData(d => ({ ...d, engagement_grade: e.target.value }))}

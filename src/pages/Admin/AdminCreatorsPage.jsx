@@ -4,10 +4,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Search, RefreshCw, Filter, ArrowLeft, ExternalLink,
-  Award, TrendingUp, Eye, Video, Megaphone, Star, Monitor
+  Award, TrendingUp, Eye, Video, Megaphone, Star, Monitor,
+  Edit3, Save, X, Radar
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getCreators, getCreatorDetail } from '../../services/admin-automation-api';
+import { getCreators, getCreatorDetail, updateCreator, refreshCreatorChannel } from '../../services/admin-automation-api';
 
 const GRADE_COLORS = {
   S: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -186,14 +187,66 @@ export default function AdminCreatorsPage({ onNavigate }) {
 function CreatorDetail({ creatorId, onBack, onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [editData, setEditData] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
 
-  useEffect(() => {
+  const reload = () => {
     setLoading(true);
     getCreatorDetail(creatorId)
       .then(r => setData(r))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, [creatorId]);
+  };
+
+  useEffect(() => { reload(); }, [creatorId]);
+
+  const showMsg = (msg) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 3000); };
+
+  const startEdit = () => {
+    if (!data?.creator) return;
+    const c = data.creator;
+    setEditData({
+      display_name: c.display_name || '',
+      bio: c.bio || '',
+      subscriber_count: c.subscriber_count || 0,
+      avg_concurrent_viewers: c.avg_concurrent_viewers || 0,
+      peak_viewers: c.peak_viewers || 0,
+      engagement_grade: c.engagement_grade || '',
+      thumbnail_url: c.thumbnail_url || '',
+      youtube_channel_id: c.youtube_channel_id || '',
+      chzzk_channel_id: c.chzzk_channel_id || '',
+      afreeca_channel_id: c.afreeca_channel_id || '',
+      trust_score: c.trust_score ?? 0.5,
+    });
+    setEditMode(true);
+  };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await updateCreator(creatorId, editData);
+      showMsg('저장되었습니다');
+      setEditMode(false);
+      reload();
+    } catch (err) { showMsg('저장 실패: ' + err.message); }
+    setSaving(false);
+  };
+
+  const handleRefreshChannel = async () => {
+    setRefreshing(true);
+    try {
+      const r = await refreshCreatorChannel(creatorId);
+      const parts = (r.results || []).map(x =>
+        x.error ? `${x.platform}: 실패` : `${x.platform}: ${(x.subscribers || x.followers || 0).toLocaleString()}`
+      ).join(' / ');
+      showMsg('재크롤: ' + (parts || '변경 없음'));
+      reload();
+    } catch (err) { showMsg('재크롤 실패: ' + err.message); }
+    setRefreshing(false);
+  };
 
   if (loading) return <div className="p-6 text-center text-slate-500 text-xs animate-pulse">로딩 중...</div>;
   if (!data) return null;
@@ -229,7 +282,73 @@ function CreatorDetail({ creatorId, onBack, onNavigate }) {
             </div>
           </div>
         </div>
+        {actionMsg && <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{actionMsg}</span>}
+        {editMode ? (
+          <>
+            <button onClick={saveEdit} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/25 disabled:opacity-50">
+              <Save size={12} /> {saving ? '저장 중' : '저장'}
+            </button>
+            <button onClick={() => setEditMode(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white border border-[#374766]/30">
+              <X size={12} /> 취소
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={handleRefreshChannel} disabled={refreshing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/25 disabled:opacity-50">
+              <Radar size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? '크롤링 중' : '채널 재크롤'}
+            </button>
+            <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/25">
+              <Edit3 size={12} /> 정보 수정
+            </button>
+          </>
+        )}
       </div>
+
+      {/* 편집 모드 */}
+      {editMode && (
+        <GlassCard className="p-5 border border-indigo-500/30">
+          <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <Edit3 size={14} className="text-indigo-400" /> 정보 수정
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              { key: 'display_name', label: '이름', type: 'text' },
+              { key: 'subscriber_count', label: '구독자 수', type: 'number' },
+              { key: 'avg_concurrent_viewers', label: '평균 시청자', type: 'number' },
+              { key: 'peak_viewers', label: '최대 시청자', type: 'number' },
+              { key: 'engagement_grade', label: '등급 (S/A/B/C)', type: 'text' },
+              { key: 'trust_score', label: '신뢰도 (0~1)', type: 'number', step: '0.01' },
+              { key: 'youtube_channel_id', label: 'YouTube 채널 ID', type: 'text' },
+              { key: 'chzzk_channel_id', label: 'Chzzk 채널 ID', type: 'text' },
+              { key: 'afreeca_channel_id', label: 'AfreecaTV ID', type: 'text' },
+              { key: 'thumbnail_url', label: '썸네일 URL', type: 'text', wide: true },
+              { key: 'bio', label: '소개', type: 'textarea', wide: true },
+            ].map(f => (
+              <div key={f.key} className={f.wide ? 'md:col-span-2' : ''}>
+                <label className="text-[10px] text-slate-400 block mb-1">{f.label}</label>
+                {f.type === 'textarea' ? (
+                  <textarea
+                    value={editData[f.key] ?? ''}
+                    onChange={e => setEditData(d => ({ ...d, [f.key]: e.target.value }))}
+                    rows={2}
+                    className="w-full px-2 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                  />
+                ) : (
+                  <input
+                    type={f.type} step={f.step}
+                    value={editData[f.key] ?? ''}
+                    onChange={e => setEditData(d => ({
+                      ...d,
+                      [f.key]: f.type === 'number' ? (f.step ? parseFloat(e.target.value) : parseInt(e.target.value)) : e.target.value
+                    }))}
+                    className="w-full px-2 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      )}
 
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

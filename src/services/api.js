@@ -176,6 +176,14 @@ export async function getAdminUsers(page = 1, limit = 50) {
   return res.json();
 }
 
+export async function updateUser(userId, data) {
+  const res = await authFetch(`/admin/users/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
 export async function updateUserRole(userId, role) {
   const res = await authFetch(`/admin/users/${userId}/role`, {
     method: 'PUT',
