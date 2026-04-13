@@ -5,4 +5,7 @@ export { default as AdminReviewQueuePage } from './AdminReviewQueuePage';
 export { default as AdminJobQueuePage } from './AdminJobQueuePage';
 export { default as AdminStreamMonitorPage } from './AdminStreamMonitorPage';
 export { default as AdminReportCenterPage } from './AdminReportCenterPage';
+export { default as AdminReportDetailPage } from './AdminReportDetailPage';
 export { default as AdminEmailDeliveryPage } from './AdminEmailDeliveryPage';
+export { default as AdminCreatorsPage } from './AdminCreatorsPage';
+export { default as AdminSettingsPage } from './AdminSettingsPage';

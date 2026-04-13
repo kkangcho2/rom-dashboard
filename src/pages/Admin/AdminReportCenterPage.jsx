@@ -52,6 +52,10 @@ export default function AdminReportCenterPage({ onNavigate }) {
     }
   };
 
+  const openFullDetail = (id) => {
+    onNavigate?.('report-detail', { reportId: id });
+  };
+
   const handleRegen = async (campaignId) => {
     await regenerateReport(campaignId);
     setActionMsg('리포트 재생성 등록됨');
@@ -124,7 +128,7 @@ export default function AdminReportCenterPage({ onNavigate }) {
                   {/* Summary row */}
                   <div
                     className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[#1a2035]/30 transition"
-                    onClick={() => handleExpand(r.id)}
+                    onClick={() => openFullDetail(r.id)}
                   >
                     <FileText size={14} className={r.status === 'generating' ? 'text-emerald-400' : r.status === 'failed' ? 'text-red-400' : 'text-indigo-400'} />
                     <div className="flex-1 min-w-0">

@@ -33,12 +33,25 @@ export const getCampaignReports = (id) => fetchJson(`/campaigns/${id}/reports`);
 export const getCampaignJobs = (id) => fetchJson(`/campaigns/${id}/jobs`);
 export const getCampaignMatches = (id) => fetchJson(`/campaigns/${id}/matches`);
 export const scanCampaignStreams = (id) => post(`/campaigns/${id}/scan-streams`);
+export const updateCampaignAutomation = (id, opts) => fetchJson(`/campaigns/${id}/automation`, { method: 'PUT', body: JSON.stringify(opts) });
+
+// ─── Creators ───────────────────────────────────────────────
+export const getCreators = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/creators${q ? `?${q}` : ''}`);
+};
+export const getCreatorDetail = (id) => fetchJson(`/creators/${id}`);
+
+// ─── Settings ───────────────────────────────────────────────
+export const getSettings = () => fetchJson('/settings');
+export const updateSettings = (body) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(body) });
 
 // ─── Review Queue ───────────────────────────────────────────
 export const getReviewQueue = (params = {}) => {
   const q = new URLSearchParams(params).toString();
   return fetchJson(`/review-queue${q ? `?${q}` : ''}`);
 };
+export const getReviewDetail = (id) => fetchJson(`/review-queue/${id}/detail`);
 export const approveReview = (id) => post(`/review-queue/${id}/approve`);
 export const rejectReview = (id) => post(`/review-queue/${id}/reject`);
 

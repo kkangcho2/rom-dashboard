@@ -191,6 +191,194 @@ module.exports = function (db) {
   //  캠페인 상세 (자동화 데이터 통합)
   // ═══════════════════════════════════════════════════════════════
 
+  // 캠페인 자동화 옵션 업데이트
+  router.put('/campaigns/:id/automation', (req, res) => {
+    try {
+      const {
+        auto_monitoring_enabled, auto_reporting_enabled, auto_email_enabled,
+        force_review, match_threshold, custom_weights_json, report_recipient_email
+      } = req.body;
+
+      const campaign = db.prepare('SELECT id FROM campaigns WHERE id = ?').get(req.params.id);
+      if (!campaign) return res.status(404).json({ error: '캠페인 없음' });
+
+      db.prepare(`
+        UPDATE campaigns SET
+          auto_monitoring_enabled = COALESCE(?, auto_monitoring_enabled),
+          auto_reporting_enabled = COALESCE(?, auto_reporting_enabled),
+          auto_email_enabled = COALESCE(?, auto_email_enabled),
+          force_review = COALESCE(?, force_review),
+          match_threshold = COALESCE(?, match_threshold),
+          custom_weights_json = COALESCE(?, custom_weights_json),
+          report_recipient_email = COALESCE(?, report_recipient_email),
+          updated_at = datetime('now')
+        WHERE id = ?
+      `).run(
+        auto_monitoring_enabled ?? null,
+        auto_reporting_enabled ?? null,
+        auto_email_enabled ?? null,
+        force_review ?? null,
+        match_threshold ?? null,
+        custom_weights_json ?? null,
+        report_recipient_email ?? null,
+        req.params.id
+      );
+
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  시스템 설정
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/settings', (req, res) => {
+    try {
+      let row = db.prepare('SELECT * FROM system_settings WHERE id = 1').get();
+      if (!row) {
+        db.prepare('INSERT INTO system_settings (id) VALUES (1)').run();
+        row = db.prepare('SELECT * FROM system_settings WHERE id = 1').get();
+      }
+      res.json({ ok: true, settings: row });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.put('/settings', (req, res) => {
+    try {
+      const {
+        default_match_threshold, default_review_threshold,
+        default_retry_attempts, polling_interval_sec,
+        auto_email_globally_enabled,
+        game_keywords_json, sponsor_keywords_json, custom_weights_json
+      } = req.body;
+
+      db.prepare(`
+        UPDATE system_settings SET
+          default_match_threshold = COALESCE(?, default_match_threshold),
+          default_review_threshold = COALESCE(?, default_review_threshold),
+          default_retry_attempts = COALESCE(?, default_retry_attempts),
+          polling_interval_sec = COALESCE(?, polling_interval_sec),
+          auto_email_globally_enabled = COALESCE(?, auto_email_globally_enabled),
+          game_keywords_json = COALESCE(?, game_keywords_json),
+          sponsor_keywords_json = COALESCE(?, sponsor_keywords_json),
+          custom_weights_json = COALESCE(?, custom_weights_json),
+          updated_at = datetime('now')
+        WHERE id = 1
+      `).run(
+        default_match_threshold ?? null,
+        default_review_threshold ?? null,
+        default_retry_attempts ?? null,
+        polling_interval_sec ?? null,
+        auto_email_globally_enabled ?? null,
+        game_keywords_json ?? null,
+        sponsor_keywords_json ?? null,
+        custom_weights_json ?? null,
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Creators
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/creators', (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+      const limit = Math.min(50, parseInt(req.query.limit) || 20);
+      const offset = (page - 1) * limit;
+      const search = (req.query.search || '').trim();
+      const platform = req.query.platform || '';
+
+      let conditions = [];
+      const params = [];
+      if (search) {
+        conditions.push('cp.display_name LIKE ?');
+        params.push(`%${search}%`);
+      }
+      if (platform === 'youtube') conditions.push('cp.youtube_channel_id IS NOT NULL AND cp.youtube_channel_id != ""');
+      if (platform === 'chzzk') conditions.push('cp.chzzk_channel_id IS NOT NULL AND cp.chzzk_channel_id != ""');
+      if (platform === 'afreeca') conditions.push('cp.afreeca_channel_id IS NOT NULL AND cp.afreeca_channel_id != ""');
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const total = db.prepare(`SELECT COUNT(*) as cnt FROM creator_profiles cp ${where}`).get(...params).cnt;
+
+      const creators = db.prepare(`
+        SELECT cp.*,
+          u.email,
+          (SELECT COUNT(*) FROM campaign_creators WHERE creator_profile_id = cp.id) as campaigns_joined,
+          (SELECT COUNT(*) FROM creator_analysis_reports WHERE platform='youtube' AND channel_id = cp.youtube_channel_id) as analysis_reports
+        FROM creator_profiles cp
+        LEFT JOIN users u ON u.id = cp.user_id
+        ${where}
+        ORDER BY cp.avg_concurrent_viewers DESC, cp.created_at DESC
+        LIMIT ? OFFSET ?
+      `).all(...params, limit, offset);
+
+      res.json({
+        ok: true,
+        creators,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Creator 상세
+  router.get('/creators/:id', (req, res) => {
+    try {
+      const creator = db.prepare(`
+        SELECT cp.*, u.email
+        FROM creator_profiles cp
+        LEFT JOIN users u ON u.id = cp.user_id
+        WHERE cp.id = ?
+      `).get(req.params.id);
+
+      if (!creator) return res.status(404).json({ error: '크리에이터 없음' });
+
+      // 캠페인 이력
+      const campaigns = db.prepare(`
+        SELECT cc.*, c.title as campaign_title, c.brand_name, c.target_game, c.state
+        FROM campaign_creators cc
+        LEFT JOIN campaigns c ON c.id = cc.campaign_id
+        WHERE cc.creator_profile_id = ?
+        ORDER BY cc.created_at DESC
+      `).all(req.params.id);
+
+      // 최근 분석 리포트
+      let analysisReports = [];
+      if (creator.youtube_channel_id) {
+        analysisReports = db.prepare(`
+          SELECT id, platform, channel_name, subscriber_count, status, marketing_insight, created_at
+          FROM creator_analysis_reports
+          WHERE platform = 'youtube' AND channel_id = ?
+          ORDER BY created_at DESC LIMIT 5
+        `).all(creator.youtube_channel_id);
+      }
+
+      // 최근 감지 방송
+      const recentStreams = db.prepare(`
+        SELECT ss.*, c.title as campaign_title
+        FROM stream_sessions ss
+        LEFT JOIN campaign_creators cc ON cc.id = ss.campaign_creator_id
+        LEFT JOIN campaigns c ON c.id = ss.campaign_id
+        WHERE cc.creator_profile_id = ?
+        ORDER BY ss.discovered_at DESC LIMIT 20
+      `).all(req.params.id);
+
+      res.json({ ok: true, creator, campaigns, analysisReports, recentStreams });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   router.get('/campaigns/:id', (req, res) => {
     try {
       const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
@@ -332,6 +520,77 @@ module.exports = function (db) {
         ok: true,
         items: items.map(r => ({ ...r, payload: JSON.parse(r.payload_json || '{}') })),
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 검수 항목 상세 (transcript/chat 샘플 + 배너 + 영상 정보)
+  router.get('/review-queue/:id/detail', (req, res) => {
+    try {
+      const item = db.prepare('SELECT * FROM review_queue WHERE id = ?').get(req.params.id);
+      if (!item) return res.status(404).json({ error: '항목 없음' });
+
+      const payload = JSON.parse(item.payload_json || '{}');
+      const streamSessionId = payload.streamSessionId || payload.result?.streamSessionId;
+      const campaignId = item.campaign_id;
+      const campaignCreatorId = item.campaign_creator_id;
+
+      // Campaign / Creator
+      const campaign = campaignId ? db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaignId) : null;
+      const campaignCreator = campaignCreatorId ? db.prepare(`
+        SELECT cc.*, cp.display_name, cp.youtube_channel_id, cp.chzzk_channel_id, cp.afreeca_channel_id, cp.thumbnail_url
+        FROM campaign_creators cc
+        LEFT JOIN creator_profiles cp ON cp.id = cc.creator_profile_id
+        WHERE cc.id = ?
+      `).get(campaignCreatorId) : null;
+
+      // Stream session
+      const session = streamSessionId ? db.prepare('SELECT * FROM stream_sessions WHERE id = ?').get(streamSessionId) : null;
+
+      // Try to resolve video
+      let video = null;
+      let transcript = null;
+      let chatSample = [];
+      if (session && session.video_id) {
+        video = db.prepare('SELECT * FROM videos WHERE platform = ? AND video_id = ?').get(session.platform, session.video_id);
+        if (video) {
+          const tr = db.prepare('SELECT content, language FROM transcripts WHERE video_id = ? LIMIT 1').get(video.id);
+          transcript = tr?.content || null;
+          chatSample = db.prepare('SELECT timestamp, username, message FROM chat_messages WHERE video_id = ? ORDER BY id DESC LIMIT 50').all(video.id);
+        }
+      }
+
+      // Banner verification
+      const bannerVerification = campaignCreatorId ? db.prepare(`
+        SELECT banner_detected, confidence, detection_method, checked_at, stream_url, screenshot_path
+        FROM banner_verifications
+        WHERE campaign_creator_id = ?
+        ORDER BY checked_at DESC LIMIT 1
+      `).get(campaignCreatorId) : null;
+
+      // Match reasons from campaign_broadcast_matches
+      const match = streamSessionId ? db.prepare(`
+        SELECT confidence, reasons_json, matched, review_required, status
+        FROM campaign_broadcast_matches
+        WHERE stream_session_id = ?
+        ORDER BY created_at DESC LIMIT 1
+      `).get(streamSessionId) : null;
+
+      const reasons = match?.reasons_json ? JSON.parse(match.reasons_json) : [];
+
+      res.json({
+        ok: true,
+        item: { ...item, payload },
+        campaign,
+        campaignCreator,
+        session,
+        video,
+        transcript,
+        chatSample,
+        bannerVerification,
+        match: match ? { ...match, reasons } : null,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });

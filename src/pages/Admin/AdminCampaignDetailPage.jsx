@@ -10,7 +10,8 @@ import { GlassCard } from '../../components/shared';
 import {
   getCampaignDetail, getCampaignStreams, getCampaignReports,
   getCampaignJobs, getCampaignMatches, scanCampaignStreams, regenerateReport,
-  forceMatchStream, excludeStream, rematchStream, resendEmail
+  forceMatchStream, excludeStream, rematchStream, resendEmail,
+  updateCampaignAutomation
 } from '../../services/admin-automation-api';
 
 const TABS = [
@@ -151,7 +152,7 @@ export default function AdminCampaignDetailPage({ campaignId, onNavigate }) {
       </div>
 
       {/* Tab Content */}
-      {tab === 'info' && <InfoTab campaign={campaign} stateHistory={stateHistory} />}
+      {tab === 'info' && <InfoTab campaign={campaign} stateHistory={stateHistory} campaignId={campaignId} onReload={load} />}
       {tab === 'creators' && <CreatorsTab creators={creators} />}
       {tab === 'streams' && (
         <StreamsTab
@@ -176,8 +177,32 @@ export default function AdminCampaignDetailPage({ campaignId, onNavigate }) {
   );
 }
 
-// ─── Tab A: 기본 정보 ───────────────────────────────────────────
-function InfoTab({ campaign, stateHistory }) {
+// ─── Tab A: 기본 정보 + 자동화 옵션 ─────────────────────────────
+function InfoTab({ campaign, stateHistory, campaignId, onReload }) {
+  const [opts, setOpts] = useState({
+    auto_monitoring_enabled: campaign.auto_monitoring_enabled ?? 1,
+    auto_reporting_enabled: campaign.auto_reporting_enabled ?? 1,
+    auto_email_enabled: campaign.auto_email_enabled ?? 0,
+    force_review: campaign.force_review ?? 0,
+    match_threshold: campaign.match_threshold ?? 0.8,
+    report_recipient_email: campaign.report_recipient_email ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateCampaignAutomation(campaignId, opts);
+      setSavedMsg('저장됨');
+      setTimeout(() => setSavedMsg(''), 2000);
+      onReload?.();
+    } catch (err) {
+      setSavedMsg('저장 실패');
+    }
+    setSaving(false);
+  };
+
   const fields = [
     ['광고명', campaign.title],
     ['브랜드명', campaign.brand_name],
@@ -209,18 +234,94 @@ function InfoTab({ campaign, stateHistory }) {
         </div>
       </GlassCard>
 
-      <GlassCard className="p-5">
-        <h3 className="text-sm font-bold text-white mb-4">상태 이력</h3>
-        <div className="space-y-2">
-          {stateHistory.map((h, i) => (
-            <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#0a0e1a]/50">
-              <div className={`w-2 h-2 rounded-full ${i === stateHistory.length - 1 ? 'bg-indigo-400' : 'bg-slate-600'}`} />
-              <span className="text-xs text-white font-medium">{STATE_LABELS[h.state] || h.state}</span>
-              <span className="text-[10px] text-slate-500 ml-auto">{formatDate(h.at)}</span>
+      <div className="space-y-5">
+        {/* 자동화 옵션 */}
+        <GlassCard className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Zap size={14} className="text-indigo-400" /> 자동화 옵션
+            </h3>
+            {savedMsg && <span className="text-[10px] text-emerald-400">{savedMsg}</span>}
+          </div>
+          <div className="space-y-3">
+            {[
+              { key: 'auto_monitoring_enabled', label: '자동 방송 모니터링', desc: '확정/LIVE 시 자동 스트림 감지' },
+              { key: 'auto_reporting_enabled', label: '자동 리포트 생성', desc: '완료 시 자동 리포트 생성' },
+              { key: 'auto_email_enabled', label: '자동 이메일 발송', desc: '검증완료 시 이메일 자동 발송' },
+              { key: 'force_review', label: '검수 강제', desc: '모든 매칭 결과를 검수 큐로 보냄' },
+            ].map(opt => (
+              <div key={opt.key} className="flex items-center justify-between p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+                <div>
+                  <div className="text-xs text-white font-medium">{opt.label}</div>
+                  <div className="text-[10px] text-slate-500">{opt.desc}</div>
+                </div>
+                <button
+                  onClick={() => setOpts(o => ({ ...o, [opt.key]: o[opt.key] ? 0 : 1 }))}
+                  className={`relative w-10 h-5 rounded-full transition ${opts[opt.key] ? 'bg-emerald-500/60' : 'bg-slate-600'}`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition ${opts[opt.key] ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
+            ))}
+
+            {/* Match threshold slider */}
+            <div className="p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="text-xs text-white font-medium">매칭 임계값 (match_threshold)</div>
+                  <div className="text-[10px] text-slate-500">이 값 이상이면 자동 매칭 인정</div>
+                </div>
+                <span className="text-sm font-bold text-amber-400">{(opts.match_threshold * 100).toFixed(0)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.3" max="1.0" step="0.05"
+                value={opts.match_threshold}
+                onChange={e => setOpts(o => ({ ...o, match_threshold: parseFloat(e.target.value) }))}
+                className="w-full accent-indigo-500"
+              />
+              <div className="flex justify-between text-[9px] text-slate-600 mt-1">
+                <span>30%</span><span>50%</span><span>80%</span><span>100%</span>
+              </div>
             </div>
-          ))}
-        </div>
-      </GlassCard>
+
+            {/* 수신 이메일 */}
+            <div className="p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+              <div className="text-xs text-white font-medium mb-1">리포트 수신 이메일</div>
+              <div className="text-[10px] text-slate-500 mb-2">빈 값이면 광고주 기본 이메일 사용</div>
+              <input
+                type="email"
+                value={opts.report_recipient_email}
+                onChange={e => setOpts(o => ({ ...o, report_recipient_email: e.target.value }))}
+                placeholder="recipient@company.com"
+                className="w-full px-2 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60"
+              />
+            </div>
+
+            <button
+              onClick={save}
+              disabled={saving}
+              className="w-full px-4 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/25 transition disabled:opacity-50"
+            >
+              {saving ? '저장 중...' : '옵션 저장'}
+            </button>
+          </div>
+        </GlassCard>
+
+        {/* 상태 이력 */}
+        <GlassCard className="p-5">
+          <h3 className="text-sm font-bold text-white mb-4">상태 이력</h3>
+          <div className="space-y-2">
+            {stateHistory.map((h, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[#0a0e1a]/50">
+                <div className={`w-2 h-2 rounded-full ${i === stateHistory.length - 1 ? 'bg-indigo-400' : 'bg-slate-600'}`} />
+                <span className="text-xs text-white font-medium">{STATE_LABELS[h.state] || h.state}</span>
+                <span className="text-[10px] text-slate-500 ml-auto">{formatDate(h.at)}</span>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+      </div>
     </div>
   );
 }

@@ -19,7 +19,10 @@ import {
   AdminJobQueuePage,
   AdminStreamMonitorPage,
   AdminReportCenterPage,
+  AdminReportDetailPage,
   AdminEmailDeliveryPage,
+  AdminCreatorsPage,
+  AdminSettingsPage,
 } from './pages/Admin';
 import useAuthStore from './store/useAuthStore';
 
@@ -48,6 +51,8 @@ export default function SaasAdmin() {
     { id: 'report-center', label: '리포트 센터', icon: FileText, group: 'automation' },
     { id: 'job-queue', label: '작업 큐', icon: Server, group: 'automation' },
     { id: 'email-delivery', label: '이메일 발송', icon: Mail, group: 'automation' },
+    { id: 'admin-creators', label: '크리에이터', icon: User, group: 'automation' },
+    { id: 'admin-settings', label: '시스템 설정', icon: Settings, group: 'automation' },
     // ─── 기존 관리 ───
     { id: 'admin', label: '유저 관리', icon: LayoutDashboard, group: 'system' },
     { id: 'marketplace', label: '마켓플레이스', icon: Store, group: 'system' },
@@ -239,7 +244,10 @@ export default function SaasAdmin() {
               {currentPage === 'job-queue' && <AdminJobQueuePage />}
               {currentPage === 'stream-monitor' && <AdminStreamMonitorPage onNavigate={handleNavigate} />}
               {currentPage === 'report-center' && <AdminReportCenterPage onNavigate={handleNavigate} />}
+              {currentPage === 'report-detail' && <AdminReportDetailPage reportId={pageParams.reportId} onNavigate={handleNavigate} />}
               {currentPage === 'email-delivery' && <AdminEmailDeliveryPage />}
+              {currentPage === 'admin-creators' && <AdminCreatorsPage onNavigate={handleNavigate} />}
+              {currentPage === 'admin-settings' && <AdminSettingsPage />}
 
               {/* ─── 기존 관리 페이지 ─── */}
               {currentPage === 'pricing' && <PricingPage onSelectPlan={() => handleNavigate('settings')} />}

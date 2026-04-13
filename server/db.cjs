@@ -575,6 +575,33 @@ try { db.prepare("ALTER TABLE campaigns ADD COLUMN broadcasts_per_month INTEGER 
 try { db.prepare("ALTER TABLE campaigns ADD COLUMN hours_per_broadcast REAL DEFAULT 2").run(); } catch {}
 try { db.prepare("ALTER TABLE campaigns ADD COLUMN budget_per_creator INTEGER DEFAULT 0").run(); } catch {}
 try { db.prepare("ALTER TABLE campaigns ADD COLUMN currency TEXT DEFAULT 'KRW'").run(); } catch {}
+// Campaign automation options (Admin console)
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN auto_monitoring_enabled INTEGER DEFAULT 1").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN auto_reporting_enabled INTEGER DEFAULT 1").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN auto_email_enabled INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN force_review INTEGER DEFAULT 0").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN match_threshold REAL DEFAULT 0.8").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN custom_weights_json TEXT").run(); } catch {}
+try { db.prepare("ALTER TABLE campaigns ADD COLUMN report_recipient_email TEXT DEFAULT ''").run(); } catch {}
+
+// System settings (singleton row id=1)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      default_match_threshold REAL DEFAULT 0.8,
+      default_review_threshold REAL DEFAULT 0.5,
+      default_retry_attempts INTEGER DEFAULT 3,
+      polling_interval_sec INTEGER DEFAULT 5,
+      auto_email_globally_enabled INTEGER DEFAULT 1,
+      game_keywords_json TEXT DEFAULT '[]',
+      sponsor_keywords_json TEXT DEFAULT '[]',
+      custom_weights_json TEXT DEFAULT '{}',
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT OR IGNORE INTO system_settings (id) VALUES (1);
+  `);
+} catch (e) { console.error('[DB] system_settings init failed:', e.message); }
 
 // ─── 광고 게임 시드 ─────────────────────────────────────────
 const SPONSORED_GAMES = ['빅보스', '아키텍트', '뱀피르', 'RF온라인', '레이븐2'];

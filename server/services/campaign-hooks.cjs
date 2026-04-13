@@ -6,6 +6,7 @@
  */
 
 const jobQueue = require('./job-queue.cjs');
+const db = require('../db.cjs');
 
 // ─── State → Job mapping ────────────────────────────────────────
 const STATE_JOB_MAP = {
@@ -50,6 +51,34 @@ function onCampaignStateChange({ campaignId, fromState, toState }) {
   const mapping = STATE_JOB_MAP[toState];
   if (!mapping) {
     return { enqueued: false };
+  }
+
+  // 캠페인별 자동화 옵션 확인
+  try {
+    const campaign = db.prepare(`
+      SELECT auto_monitoring_enabled, auto_reporting_enabled, auto_email_enabled
+      FROM campaigns WHERE id = ?
+    `).get(campaignId);
+
+    if (campaign) {
+      // monitor / sync_streams → auto_monitoring_enabled
+      if ((toState === 'confirmed' || toState === 'live') && campaign.auto_monitoring_enabled === 0) {
+        console.log(`[CampaignHooks] Campaign ${campaignId}: auto_monitoring disabled, skipping ${mapping.jobType}`);
+        return { enqueued: false, reason: 'auto_monitoring_disabled' };
+      }
+      // generate_report → auto_reporting_enabled
+      if (toState === 'completed' && campaign.auto_reporting_enabled === 0) {
+        console.log(`[CampaignHooks] Campaign ${campaignId}: auto_reporting disabled, skipping`);
+        return { enqueued: false, reason: 'auto_reporting_disabled' };
+      }
+      // send_email → auto_email_enabled
+      if (toState === 'verified' && campaign.auto_email_enabled === 0) {
+        console.log(`[CampaignHooks] Campaign ${campaignId}: auto_email disabled, skipping`);
+        return { enqueued: false, reason: 'auto_email_disabled' };
+      }
+    }
+  } catch (err) {
+    console.warn('[CampaignHooks] Option check failed, proceeding with default:', err.message);
   }
 
   const { jobType, priority, buildDedupeKey } = mapping;
