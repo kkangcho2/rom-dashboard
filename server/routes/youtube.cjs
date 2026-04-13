@@ -257,9 +257,11 @@ module.exports = function(db) {
     if (opts.useCookies !== false && hasCookies()) {
       args.push('--cookies', COOKIE_PATH);
     }
-    // android_vr 클라이언트가 최근 YouTube 제한 우회에 가장 안정적 (yt-dlp 자동 선택과 동일)
+    // android_vr 클라이언트가 최근 YouTube 제한 우회에 가장 안정적
+    // PO Token plugin (bgutil-ytdlp-pot-provider) 자동 활성화 — 봇 차단 우회
+    const potUrl = process.env.POT_PROVIDER_URL || 'http://127.0.0.1:4416';
     args.push(
-      '--extractor-args', 'youtube:player_client=default,android_vr,mweb,web_creator',
+      '--extractor-args', `youtube:player_client=default,android_vr,mweb,web_creator;getpot_bgutil_baseurl=${potUrl}`,
       '--user-agent', 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'
     );
     return [...args, ...extra];

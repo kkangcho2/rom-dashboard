@@ -188,5 +188,53 @@ app.listen(PORT, () => {
     // 부팅 후 30초 내 즉시 최신 nightly로 업데이트 (구버전 때문에 transcript 실패 방지)
     setTimeout(updateYtDlp, 30 * 1000);
     setInterval(updateYtDlp, 24 * 60 * 60 * 1000); // 24시간마다
+
+    // bgutil PO Token Provider sidecar 자동 시작 (YouTube 봇 차단 우회)
+    startPotProvider();
   }
 });
+
+// ─── bgutil-pot-provider-server sidecar ──────────────────────
+let potProviderProc = null;
+let potProviderRestartCount = 0;
+
+function startPotProvider() {
+  if (potProviderProc) return;
+  const { spawn } = require('child_process');
+  console.log('[PoT] starting bgutil-pot-provider-server on port 4416...');
+
+  // npm install된 package의 실행 스크립트 경로
+  const candidates = [
+    '/app/node_modules/bgutil-pot-provider-server/build/main.js',
+    '/app/node_modules/.bin/bgutil-pot-provider-server',
+  ];
+  const fsLocal = require('fs');
+  const target = candidates.find(p => { try { return fsLocal.existsSync(p); } catch { return false; } });
+  if (!target) {
+    console.warn('[PoT] sidecar binary not found, skipping. Bot block fallback will be used.');
+    return;
+  }
+
+  potProviderProc = spawn('node', [target], {
+    env: { ...process.env, PORT: '4416', PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  potProviderProc.stdout.on('data', d => {
+    const msg = d.toString().trim();
+    if (msg) console.log('[PoT]', msg.substring(0, 200));
+  });
+  potProviderProc.stderr.on('data', d => {
+    const msg = d.toString().trim();
+    if (msg) console.warn('[PoT err]', msg.substring(0, 200));
+  });
+  potProviderProc.on('exit', code => {
+    console.warn(`[PoT] sidecar exited code=${code} (restart count=${potProviderRestartCount})`);
+    potProviderProc = null;
+    if (potProviderRestartCount < 5) {
+      potProviderRestartCount++;
+      setTimeout(startPotProvider, 30_000);
+    } else {
+      console.error('[PoT] sidecar failed 5+ times, giving up. Manual restart needed.');
+    }
+  });
+}

@@ -264,6 +264,21 @@ async function checkAfreeca() {
   }
 }
 
+async function checkPotProvider() {
+  const start = Date.now();
+  const url = process.env.POT_PROVIDER_URL || 'http://127.0.0.1:4416';
+  try {
+    // ping endpoint — bgutil-pot-provider exposes /ping or root health
+    const r = await axios.get(`${url}/ping`, { timeout: 3000, validateStatus: () => true });
+    if (r.status >= 200 && r.status < 500) {
+      return { check: 'pot_provider', status: 'ok', latency: Date.now() - start, message: `running on ${url}` };
+    }
+    return { check: 'pot_provider', status: 'fail', latency: Date.now() - start, message: `HTTP ${r.status}` };
+  } catch (err) {
+    return { check: 'pot_provider', status: 'fail', latency: Date.now() - start, message: err.code || err.message };
+  }
+}
+
 function checkOrchestrator() {
   try {
     const orchestrator = require('./campaign-orchestrator.cjs');
@@ -330,6 +345,7 @@ async function runAllChecks() {
     checkYoutubeTranscript(),
     checkChzzk(),
     checkAfreeca(),
+    checkPotProvider(),
   ]);
 
   externalChecks.forEach(r => {
@@ -430,4 +446,5 @@ module.exports = {
   checkDatabase,
   checkOrchestrator,
   checkJobFailureRate,
+  checkPotProvider,
 };
