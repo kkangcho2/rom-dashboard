@@ -5,10 +5,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   FileText, RefreshCw, RotateCcw, ChevronDown, ExternalLink, Mail, Eye,
-  CheckCircle2, AlertTriangle, Users, Monitor, BarChart3
+  CheckCircle2, AlertTriangle, Users, Monitor, BarChart3, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getReports, getReportDetail, regenerateReport } from '../../services/admin-automation-api';
+import { getReports, getReportDetail, regenerateReport, deleteVerificationReport, deleteDeliveryReport } from '../../services/admin-automation-api';
 
 const STATUS_COLORS = {
   completed: 'bg-emerald-500/20 text-emerald-400',
@@ -59,6 +59,13 @@ export default function AdminReportCenterPage({ onNavigate }) {
   const handleRegen = async (campaignId) => {
     await regenerateReport(campaignId);
     setActionMsg('리포트 재생성 등록됨');
+    setTimeout(() => setActionMsg(''), 2000);
+  };
+  const handleDeleteVR = async (id, e) => {
+    e.stopPropagation();
+    if (!confirm(`검증 리포트 ${id}을(를) 영구 삭제합니다. 계속?`)) return;
+    try { await deleteVerificationReport(id); setActionMsg('삭제됨'); load(); }
+    catch (err) { alert('삭제 실패: ' + err.message); }
     setTimeout(() => setActionMsg(''), 2000);
   };
 
@@ -147,6 +154,13 @@ export default function AdminReportCenterPage({ onNavigate }) {
                       <span className="text-[10px] text-slate-400">{r.total_stream_minutes}분</span>
                     )}
                     <span className="text-[10px] text-slate-600">{formatDate(r.created_at)}</span>
+                    <button
+                      onClick={(e) => handleDeleteVR(r.id, e)}
+                      className="p-1 rounded hover:bg-red-500/20 transition"
+                      title="리포트 영구 삭제"
+                    >
+                      <Trash2 size={11} className="text-red-400" />
+                    </button>
                     <ChevronDown size={14} className={`text-slate-500 transition ${expanded ? 'rotate-180' : ''}`} />
                   </div>
 

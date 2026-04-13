@@ -18,6 +18,18 @@ async function fetchJson(path, options) {
 function post(path) {
   return fetchJson(path, { method: 'POST' });
 }
+function del(path) {
+  return fetchJson(path, { method: 'DELETE' });
+}
+
+// ─── 일괄 삭제 헬퍼 ─────────────────────────────────────────
+export const deleteCampaign = (id) => del(`/campaigns/${id}`);
+export const deleteStream = (id) => del(`/streams/${id}`);
+export const deleteVerificationReport = (id) => del(`/reports/verification/${id}`);
+export const deleteDeliveryReport = (id) => del(`/reports/delivery/${id}`);
+export const deleteEmail = (id) => del(`/emails/${id}`);
+export const deleteCreator = (id) => del(`/creators/${id}`);
+export const deleteReview = (id) => del(`/review-queue/${id}`);
 
 // ─── Dashboard ──────────────────────────────────────────────
 export const getDashboard = () => fetchJson('/dashboard');

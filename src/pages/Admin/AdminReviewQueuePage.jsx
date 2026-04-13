@@ -5,10 +5,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Eye, CheckCircle2, XCircle, RefreshCw, Filter, ChevronDown, ExternalLink, AlertTriangle,
-  Video, Users, MessageCircle, FileText, ImageIcon, Star, Award, Hash
+  Video, Users, MessageCircle, FileText, ImageIcon, Star, Award, Hash, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getReviewQueue, getReviewDetail, approveReview, rejectReview } from '../../services/admin-automation-api';
+import { getReviewQueue, getReviewDetail, approveReview, rejectReview, deleteReview } from '../../services/admin-automation-api';
 
 const PLATFORM_COLORS = {
   youtube: 'bg-red-500/20 text-red-400',
@@ -79,6 +79,14 @@ export default function AdminReviewQueuePage({ onNavigate }) {
     load();
   };
 
+  const handleDelete = async (id, e) => {
+    e.stopPropagation();
+    if (!confirm(`검수 항목 #${id}을(를) 영구 삭제합니다. 계속?`)) return;
+    try { await deleteReview(id); setActionMsg('삭제됨'); load(); }
+    catch (err) { alert('삭제 실패: ' + err.message); }
+    setTimeout(() => setActionMsg(''), 2000);
+  };
+
   return (
     <div className="p-6 space-y-5 max-w-[1400px]">
       <div className="flex items-center justify-between">
@@ -146,6 +154,9 @@ export default function AdminReviewQueuePage({ onNavigate }) {
                   )}
                   {item.platform && <PlatformBadge platform={item.platform} />}
                   <span className="text-[10px] text-slate-600">{formatDate(item.created_at)}</span>
+                  <button onClick={(e) => handleDelete(item.id, e)} className="p-1 rounded hover:bg-red-500/20 transition" title="영구 삭제">
+                    <Trash2 size={11} className="text-red-400" />
+                  </button>
                   <ChevronDown size={14} className={`text-slate-500 transition ${expanded ? 'rotate-180' : ''}`} />
                 </div>
 

@@ -3,10 +3,10 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Megaphone, Search, Filter, Users, Monitor, FileText, Mail, Eye, RefreshCw
+  Megaphone, Search, Filter, Users, Monitor, FileText, Mail, Eye, RefreshCw, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getCampaigns } from '../../services/admin-automation-api';
+import { getCampaigns, deleteCampaign } from '../../services/admin-automation-api';
 
 const STATE_LABELS = {
   draft: '작성중', published: '공개', matching: '매칭중', negotiating: '협의중',
@@ -39,6 +39,15 @@ export default function AdminCampaignListPage({ onNavigate }) {
   }, [page, stateFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (id, title, e) => {
+    e.stopPropagation();
+    if (!confirm(`캠페인 "${title}"을(를) 영구 삭제하시겠습니까?\n\n관련 데이터도 모두 삭제됩니다:\n- 계약 크리에이터\n- 감지 방송 / 매칭 결과\n- 검증 리포트 / 배송 리포트\n- 이메일 발송 이력\n- 메시지\n\n이 동작은 되돌릴 수 없습니다.`)) return;
+    try {
+      await deleteCampaign(id);
+      load();
+    } catch (err) { alert('삭제 실패: ' + err.message); }
+  };
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px]">
@@ -93,6 +102,7 @@ export default function AdminCampaignListPage({ onNavigate }) {
                   <th className="text-center py-3 px-3">발송</th>
                   <th className="text-center py-3 px-3">검수</th>
                   <th className="text-left py-3 px-3">기간</th>
+                  <th className="text-center py-3 px-3">관리</th>
                 </tr>
               </thead>
               <tbody>
@@ -136,6 +146,15 @@ export default function AdminCampaignListPage({ onNavigate }) {
                     </td>
                     <td className="py-3 px-3 text-slate-500 text-[10px] whitespace-nowrap">
                       {c.campaign_start_date?.slice(0,10) || '?'} ~ {c.campaign_end_date?.slice(0,10) || '?'}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <button
+                        onClick={(e) => handleDelete(c.id, c.title, e)}
+                        className="p-1.5 rounded hover:bg-red-500/20 transition"
+                        title="캠페인 삭제 (관련 데이터 cascade)"
+                      >
+                        <Trash2 size={12} className="text-red-400" />
+                      </button>
                     </td>
                   </tr>
                 ))}

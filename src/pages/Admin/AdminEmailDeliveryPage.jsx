@@ -2,9 +2,9 @@
  * AdminEmailDeliveryPage — 이메일 발송 관리
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Mail, RefreshCw, RotateCcw } from 'lucide-react';
+import { Mail, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getEmails, resendEmail } from '../../services/admin-automation-api';
+import { getEmails, resendEmail, deleteEmail } from '../../services/admin-automation-api';
 
 const STATUS_COLORS = {
   sent: 'bg-emerald-500/20 text-emerald-400',
@@ -32,6 +32,13 @@ export default function AdminEmailDeliveryPage() {
   const handleResend = async (campaignId) => {
     await resendEmail(campaignId);
     setActionMsg('재발송 등록됨');
+    setTimeout(() => setActionMsg(''), 2000);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm(`이메일 발송 기록 #${id}을(를) 영구 삭제합니다. 계속?`)) return;
+    try { await deleteEmail(id); setActionMsg('삭제됨'); load(); }
+    catch (e) { alert('삭제 실패: ' + e.message); }
     setTimeout(() => setActionMsg(''), 2000);
   };
 
@@ -87,11 +94,16 @@ export default function AdminEmailDeliveryPage() {
                     <td className="py-3 px-3 text-slate-500 text-[10px]">{formatDate(e.sent_at || e.created_at)}</td>
                     <td className="py-3 px-3 text-red-400 text-[10px] truncate max-w-[150px]">{e.error_message || '-'}</td>
                     <td className="py-3 px-3 text-center">
-                      {e.status === 'failed' && e.campaign_id && (
-                        <button onClick={() => handleResend(e.campaign_id)} className="p-1 rounded hover:bg-cyan-500/20 transition" title="재발송">
-                          <RotateCcw size={12} className="text-cyan-400" />
+                      <div className="flex items-center gap-1 justify-center">
+                        {e.status === 'failed' && e.campaign_id && (
+                          <button onClick={() => handleResend(e.campaign_id)} className="p-1 rounded hover:bg-cyan-500/20 transition" title="재발송">
+                            <RotateCcw size={12} className="text-cyan-400" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(e.id)} className="p-1 rounded hover:bg-red-500/20 transition" title="영구 삭제">
+                          <Trash2 size={12} className="text-red-400" />
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -213,6 +213,110 @@ module.exports = function (db) {
   //  캠페인 상세 (자동화 데이터 통합)
   // ═══════════════════════════════════════════════════════════════
 
+  // 캠페인 영구 삭제 (cascade: campaign_creators, stream_sessions, matches, reports, emails)
+  router.delete('/campaigns/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const cid = req.params.id;
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM email_deliveries WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM delivery_reports WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM verification_reports WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM campaign_broadcast_matches WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM stream_sessions WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM review_queue WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM campaign_creators WHERE campaign_id = ?').run(cid);
+        db.prepare('DELETE FROM banner_verifications WHERE campaign_creator_id IN (SELECT id FROM campaign_creators WHERE campaign_id = ?)').run(cid);
+        db.prepare('DELETE FROM campaign_messages WHERE campaign_id = ?').run(cid);
+        return db.prepare('DELETE FROM campaigns WHERE id = ?').run(cid).changes;
+      });
+      const deleted = tx();
+      if (deleted === 0) return res.status(404).json({ error: '캠페인 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 스트림 세션 삭제
+  router.delete('/streams/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      db.prepare('DELETE FROM campaign_broadcast_matches WHERE stream_session_id = ?').run(req.params.id);
+      const r = db.prepare('DELETE FROM stream_sessions WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '세션 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 검증 리포트 삭제
+  router.delete('/reports/verification/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const r = db.prepare('DELETE FROM verification_reports WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '리포트 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 배송 리포트 삭제
+  router.delete('/reports/delivery/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const r = db.prepare('DELETE FROM delivery_reports WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '리포트 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 이메일 발송 기록 삭제
+  router.delete('/emails/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const r = db.prepare('DELETE FROM email_deliveries WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '이메일 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 크리에이터 삭제 (cascade: campaign_creators)
+  router.delete('/creators/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const cid = req.params.id;
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM banner_verifications WHERE campaign_creator_id IN (SELECT id FROM campaign_creators WHERE creator_profile_id = ?)').run(cid);
+        db.prepare('DELETE FROM campaign_creators WHERE creator_profile_id = ?').run(cid);
+        return db.prepare('DELETE FROM creator_profiles WHERE id = ?').run(cid).changes;
+      });
+      const deleted = tx();
+      if (deleted === 0) return res.status(404).json({ error: '크리에이터 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 검수 큐 항목 삭제
+  router.delete('/review-queue/:id', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const r = db.prepare('DELETE FROM review_queue WHERE id = ?').run(req.params.id);
+      if (r.changes === 0) return res.status(404).json({ error: '항목 없음' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 캠페인 자동화 옵션 업데이트
   router.put('/campaigns/:id/automation', (req, res) => {
     try {

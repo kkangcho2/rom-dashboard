@@ -3,10 +3,10 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Monitor, RefreshCw, Filter, CheckCircle2, XCircle, RotateCcw, ExternalLink, Eye
+  Monitor, RefreshCw, Filter, CheckCircle2, XCircle, RotateCcw, ExternalLink, Eye, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getStreams, forceMatchStream, excludeStream, rematchStream } from '../../services/admin-automation-api';
+import { getStreams, forceMatchStream, excludeStream, rematchStream, deleteStream } from '../../services/admin-automation-api';
 
 const MATCH_COLORS = {
   matched: 'bg-emerald-500/20 text-emerald-400',
@@ -46,6 +46,11 @@ export default function AdminStreamMonitorPage({ onNavigate }) {
   const handleForce = async (id) => { await forceMatchStream(id); showAction('강제 매칭'); load(); };
   const handleExclude = async (id) => { await excludeStream(id); showAction('제외 완료'); load(); };
   const handleRematch = async (id) => { await rematchStream(id); showAction('재매칭 등록'); load(); };
+  const handleDelete = async (id) => {
+    if (!confirm(`스트림 세션 #${id}을(를) 영구 삭제합니다. 매칭 결과도 함께 삭제됩니다. 계속?`)) return;
+    try { await deleteStream(id); showAction('삭제됨'); load(); }
+    catch (e) { alert('삭제 실패: ' + e.message); }
+  };
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px]">
@@ -162,6 +167,9 @@ export default function AdminStreamMonitorPage({ onNavigate }) {
                         </button>
                         <button onClick={() => handleRematch(s.id)} className="p-1 rounded hover:bg-cyan-500/20 transition" title="재분석">
                           <RotateCcw size={11} className="text-cyan-400" />
+                        </button>
+                        <button onClick={() => handleDelete(s.id)} className="p-1 rounded hover:bg-red-500/20 transition" title="영구 삭제">
+                          <Trash2 size={11} className="text-red-400" />
                         </button>
                       </div>
                     </td>

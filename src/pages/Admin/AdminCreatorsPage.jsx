@@ -5,10 +5,10 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Search, RefreshCw, Filter, ArrowLeft, ExternalLink,
   Award, TrendingUp, Eye, Video, Megaphone, Star, Monitor,
-  Edit3, Save, X, Radar
+  Edit3, Save, X, Radar, Trash2
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getCreators, getCreatorDetail, updateCreator, refreshCreatorChannel } from '../../services/admin-automation-api';
+import { getCreators, getCreatorDetail, updateCreator, refreshCreatorChannel, deleteCreator } from '../../services/admin-automation-api';
 
 const GRADE_COLORS = {
   S: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -105,6 +105,7 @@ export default function AdminCreatorsPage({ onNavigate }) {
                   <th className="text-center py-3 px-3">캠페인</th>
                   <th className="text-center py-3 px-3">신뢰도</th>
                   <th className="text-left py-3 px-3">가입일</th>
+                  <th className="text-center py-3 px-3">관리</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,6 +162,20 @@ export default function AdminCreatorsPage({ onNavigate }) {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-500 text-[10px]">{formatDate(c.created_at)}</td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm(`크리에이터 "${c.display_name}"을(를) 영구 삭제합니다.\n계약 캠페인/배너 검증 데이터도 함께 삭제됩니다. 계속?`)) return;
+                            try { await deleteCreator(c.id); load(); }
+                            catch (err) { alert('삭제 실패: ' + err.message); }
+                          }}
+                          className="p-1.5 rounded hover:bg-red-500/20 transition"
+                          title="크리에이터 삭제"
+                        >
+                          <Trash2 size={12} className="text-red-400" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
