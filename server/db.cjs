@@ -631,10 +631,13 @@ try {
 } catch (e) { console.error('[DB] system_health init failed:', e.message); }
 
 // delivery_reports — 신규 파이프라인용 컬럼 확장
+// SQLite는 ALTER TABLE 시 비결정적 default(datetime('now'))를 거부하므로 default 없이 추가
 try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN campaign_creator_id TEXT").run(); } catch {}
 try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN video_id INTEGER").run(); } catch {}
 try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN generated_at TEXT").run(); } catch {}
-try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))").run(); } catch {}
+try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN updated_at TEXT").run(); } catch {}
+// 기존 row들의 updated_at NULL → created_at으로 채움
+try { db.prepare("UPDATE delivery_reports SET updated_at = COALESCE(updated_at, created_at, datetime('now'))").run(); } catch {}
 
 // ─── 광고 게임 시드 ─────────────────────────────────────────
 const SPONSORED_GAMES = ['빅보스', '아키텍트', '뱀피르', 'RF온라인', '레이븐2'];
