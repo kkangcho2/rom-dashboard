@@ -295,36 +295,69 @@ class CampaignAutoService {
       // 배치로 AI 분석 (5개씩)
       for (let i = 0; i < sorted.length; i += 5) {
         const batch = sorted.slice(i, i + 5);
+
+        // 자막/채팅 로드 (videos DB에 있는 경우)
+        for (const v of batch) {
+          const tcData = this._loadTranscriptAndChat(v.videoId);
+          v._transcript = tcData.transcript;
+          v._chat = tcData.chat;
+        }
+
         const videosText = batch.map((v, idx) => {
           const duration = this._parseDuration(v.duration);
-          return `[${v.broadcastNumber}번째 방송] ${v.date}
+          const tr = v._transcript
+            ? `\n[TRANSCRIPT]\n${v._transcript.substring(0, 4000)}`
+            : '\n[TRANSCRIPT] (없음)';
+          const ch = v._chat
+            ? `\n[CHAT]\n${v._chat.substring(0, 3000)}`
+            : '\n[CHAT] (없음)';
+          return `[${v.broadcastNumber}번째 방송] videoId=${v.videoId} date=${v.date}
 제목: ${v.title}
 조회수: ${(v.viewCount || 0).toLocaleString()}회 | 좋아요: ${(v.likeCount || 0).toLocaleString()} | 댓글: ${(v.commentCount || 0).toLocaleString()}
-동시접속: ${(v.concurrentViewers || 0).toLocaleString()}명 | 방송시간: ${duration}`;
-        }).join('\n\n');
+동시접속: ${(v.concurrentViewers || 0).toLocaleString()}명 | 방송시간: ${duration}${tr}${ch}`;
+        }).join('\n\n---\n\n');
 
-        const prompt = `당신은 게임 방송 마케팅 분석가입니다. 아래 크리에이터의 "${targetGame}" 게임 방송들을 분석하세요.
+        const prompt = `당신은 게임 방송 데이터를 분석하는 전문가입니다. 각 방송의 자막(transcript)과 채팅(chat)을 분석해 UI 카드 하단에 들어갈 "3줄 요약"을 만드세요.
 
-크리에이터: ${creator.creatorName}
+크리에이터: ${creator.creatorName} / 타겟 게임: ${targetGame}
 
 ${videosText}
 
-각 방송에 대해 다음 형식으로 JSON 배열을 반환하세요 (다른 텍스트 없이 JSON만):
+==============================
+출력 규칙 (반드시 지켜라)
+==============================
+각 방송마다 다음 JSON 배열 형식으로만 반환 (다른 텍스트 금지):
 [
   {
     "videoId": "영상ID",
-    "summary": "방송 내용 한줄 요약 (30자 이내)",
-    "viewerReaction": "시청자 반응/참여도 평가 (30자 이내)",
-    "highlights": "특이사항이나 주목할 점 (30자 이내)",
-    "rating": "good/normal/poor"
+    "summary": "🎮 방송 내용 요약 (30자 이내, 이모지 포함)",
+    "viewerReaction": "👥 시청자 반응 (30자 이내, 이모지 포함)",
+    "highlights": "⚠️ 이슈 또는 문제 — 없으면 긍정 요소 (30자 이내, 이모지 포함)",
+    "rating": "good|normal|poor"
   }
 ]
 
-판단 기준:
-- 조회수/동시접속 대비 좋아요/댓글 비율로 참여도 평가
-- 방송시간이 길수록 성실한 방송
-- 동시접속 대비 조회수가 높으면 VOD 재시청이 활발
-- rating: good(평균 이상 성과), normal(보통), poor(저조)`;
+==============================
+내용 작성 규칙
+==============================
+
+[summary - 🎮 방송 내용]
+- 방송에서 실제로 한 행동 중심 (강화, 보스레이드, 사냥, Q&A, 업데이트 리뷰 등)
+- 자막(TRANSCRIPT)에서 추출. 없으면 제목/지표 기반
+- 추상적 표현 금지
+
+[viewerReaction - 👥 시청자 반응]
+- 채팅(CHAT)에서 반응이 몰린 순간, 참여도 변화, 감정 표현
+- 채팅 없으면 동시접속/좋아요/댓글 비율로 판단
+- "환호/지루함/기대/불만" 같은 구체 감정 단어 사용
+
+[highlights - ⚠️ 이슈]
+- 버그, 렉, 튕김, 불만, 반복 문제
+- 없으면 긍정 요소 (구체적으로)
+
+금지: "재밌는 방송" / "좋은 분위기" 같은 추상 표현, 일반적 문장, 의미 없는 반복
+필수: 각 필드 30자 이내, 이모지 포함, 구체적
+rating 기준: good(시청자 반응 긍정 + 이슈 없음), normal(보통), poor(저조/반복 불만)`;
 
         try {
           let analysisText = '';
@@ -381,6 +414,34 @@ ${videosText}
         }
         await new Promise(r => setTimeout(r, 500));
       }
+    }
+  }
+
+  // 자막/채팅 로드 (있으면 반환, 없으면 null)
+  _loadTranscriptAndChat(platformVideoId) {
+    if (!platformVideoId) return { transcript: null, chat: null };
+    try {
+      const videoRow = this.db.prepare(
+        "SELECT id FROM videos WHERE platform = 'youtube' AND video_id = ?"
+      ).get(platformVideoId);
+      if (!videoRow) return { transcript: null, chat: null };
+
+      const tr = this.db.prepare(
+        'SELECT content FROM transcripts WHERE video_id = ? ORDER BY id DESC LIMIT 1'
+      ).get(videoRow.id);
+      const transcript = tr?.content || null;
+
+      const chatRows = this.db.prepare(
+        `SELECT timestamp, username, message FROM chat_messages
+         WHERE video_id = ? ORDER BY id DESC LIMIT 300`
+      ).all(videoRow.id);
+      const chat = chatRows.length > 0
+        ? chatRows.reverse().map(r => `${r.username || '익명'}: ${r.message}`).join('\n')
+        : null;
+
+      return { transcript, chat };
+    } catch {
+      return { transcript: null, chat: null };
     }
   }
 
