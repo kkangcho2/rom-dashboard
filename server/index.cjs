@@ -203,11 +203,12 @@ function startPotProvider() {
   const { spawn } = require('child_process');
   console.log('[PoT] starting bgutil-pot-provider-server on port 4416...');
 
-  // npm install된 package의 실행 스크립트 경로
+  // GitHub source build된 sidecar 경로 (Dockerfile에서 /opt/bgutil/server에 설치)
   const candidates = [
+    process.env.POT_PROVIDER_SERVER_PATH,
+    '/opt/bgutil/server/build/main.js',
     '/app/node_modules/bgutil-pot-provider-server/build/main.js',
-    '/app/node_modules/.bin/bgutil-pot-provider-server',
-  ];
+  ].filter(Boolean);
   const fsLocal = require('fs');
   const target = candidates.find(p => { try { return fsLocal.existsSync(p); } catch { return false; } });
   if (!target) {

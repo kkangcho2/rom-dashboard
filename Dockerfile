@@ -1,44 +1,43 @@
 FROM node:20-slim
 
-# Install yt-dlp, ffmpeg, python3, deno (JS runtime for yt-dlp), unzip
-# curl은 런타임에서 yt-dlp 자동 업데이트를 위해 유지
+# Install yt-dlp, ffmpeg, python3, deno, chromium for puppeteer
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip ffmpeg curl ca-certificates \
+    python3 python3-pip ffmpeg curl ca-certificates git \
     build-essential python3-setuptools unzip \
+    chromium fonts-noto-cjk \
   && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
   && chmod a+rwx /usr/local/bin/yt-dlp \
   && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
   && pip3 install --break-system-packages bgutil-ytdlp-pot-provider \
-  && apt-get purge -y --auto-remove build-essential unzip \
+  && rm -rf /var/lib/apt/lists/*
+
+# bgutil PO Token Provider sidecar 빌드 (GitHub source)
+RUN git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
+  && cd /opt/bgutil/server \
+  && PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm install \
+  && npm run build \
+  && rm -rf /opt/bgutil/.git /opt/bgutil/plugin
+
+# Cleanup build deps after use
+RUN apt-get purge -y --auto-remove build-essential unzip git \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy only server-related files (no frontend)
+# Copy server files
 COPY package.json ./
 COPY server/ ./server/
 
-# Install only production dependencies needed for the server
-# bgutil-pot-provider-server: Node sidecar for PO Token (포함 puppeteer)
 RUN npm install --omit=dev --ignore-scripts \
-  && npm install bgutil-pot-provider-server --omit=dev \
   && npm rebuild better-sqlite3 \
   && npm rebuild bcrypt
-
-# Pre-download Chromium for puppeteer (bgutil sidecar 의존성)
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
-RUN node -e "require('puppeteer').default ? require('puppeteer').default.executablePath() : require('puppeteer').executablePath()" 2>/dev/null || true
-
-# Install Chromium dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium fonts-noto-cjk \
-  && rm -rf /var/lib/apt/lists/*
 
 # Use system chromium (puppeteer 환경변수)
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV POT_PROVIDER_PORT=4416
 ENV POT_PROVIDER_URL=http://127.0.0.1:4416
+ENV POT_PROVIDER_SERVER_PATH=/opt/bgutil/server/build/main.js
 
 # Expose port
 EXPOSE 8080
