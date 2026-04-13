@@ -32,6 +32,10 @@ module.exports = function (db) {
     }
     return true;
   };
+
+  function safeParse(s, fallback = null) {
+    try { return JSON.parse(s); } catch { return fallback; }
+  }
   const reviewQueueService = require('../services/review-queue.cjs');
 
   // ═══════════════════════════════════════════════════════════════
@@ -406,6 +410,136 @@ module.exports = function (db) {
         sponsor_keywords_json ?? null,
         custom_weights_json ?? null,
       );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Phase 4: Broadcast Processing Pipeline
+  // ═══════════════════════════════════════════════════════════════
+  const BroadcastState = require('../services/broadcast-state.cjs');
+  const Discovery = require('../services/broadcast-discovery.cjs');
+
+  // 방송 목록 조회
+  router.get('/broadcasts', (req, res) => {
+    try {
+      const state = req.query.state || '';
+      const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+      const offset = parseInt(req.query.offset) || 0;
+      const items = state
+        ? BroadcastState.listByState(state, limit)
+        : BroadcastState.listAll(limit, offset);
+      res.json({
+        ok: true,
+        items: items.map(it => ({
+          ...it,
+          state_history: safeParse(it.state_history),
+          error_log: safeParse(it.error_log),
+        })),
+        counts: BroadcastState.countByState(),
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 방송 단일 조회
+  router.get('/broadcasts/:videoId', (req, res) => {
+    try {
+      const row = BroadcastState.get(req.params.videoId);
+      if (!row) return res.status(404).json({ error: '방송 없음' });
+      const transcript = row.transcript_id
+        ? db.prepare('SELECT content, language FROM transcripts WHERE id = ?').get(row.transcript_id)
+        : null;
+      res.json({
+        ok: true,
+        broadcast: {
+          ...row,
+          state_history: safeParse(row.state_history),
+          error_log: safeParse(row.error_log),
+        },
+        transcript,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 즉시 채널 디스커버리 트리거
+  router.post('/broadcasts/discover-now', (req, res) => {
+    try {
+      const { channelId, campaignId, campaignCreatorId, lookbackHours } = req.body || {};
+      if (!channelId) return res.status(400).json({ error: 'channelId required' });
+      jobQueue.enqueue({
+        jobType: 'poll_creator_live',
+        payload: { channelId, campaignId, campaignCreatorId, lookbackHours },
+        dedupeKey: `poll_creator_live:${channelId}:${Date.now()}`,
+        priority: 9,
+      });
+      res.json({ ok: true, message: 'discovery 잡 등록됨' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 방송 재처리 (transcript 단계부터)
+  router.post('/broadcasts/:videoId/retry', (req, res) => {
+    try {
+      const row = BroadcastState.get(req.params.videoId);
+      if (!row) return res.status(404).json({ error: '방송 없음' });
+      try { BroadcastState.transition(req.params.videoId, 'transcript_fetching', { reason: 'manual_retry' }); }
+      catch { /* 상태가 이미 적합하지 않으면 무시 */ }
+      jobQueue.enqueue({
+        jobType: 'extract_transcript',
+        payload: { videoId: req.params.videoId },
+        dedupeKey: `extract_transcript:${req.params.videoId}:retry:${Date.now()}`,
+        priority: 9,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 수동 transcript 입력 (manual_required 상태에서)
+  router.post('/broadcasts/:videoId/manual-transcript', (req, res) => {
+    try {
+      const { transcript, language } = req.body || {};
+      if (!transcript || transcript.length < 10) return res.status(400).json({ error: 'transcript too short' });
+      const row = BroadcastState.get(req.params.videoId);
+      if (!row) return res.status(404).json({ error: '방송 없음' });
+
+      BroadcastState.saveTranscript(req.params.videoId, {
+        source: 'manual',
+        text: transcript,
+        language: language || 'ko',
+      });
+      try { BroadcastState.transition(req.params.videoId, 'transcript_fetched', { reason: 'manual_input' }); } catch {}
+
+      jobQueue.enqueue({
+        jobType: 'generate_broadcast_report',
+        payload: { videoId: req.params.videoId },
+        dedupeKey: `generate_broadcast_report:${req.params.videoId}`,
+        priority: 7,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 방송 삭제 (cleanup)
+  router.delete('/broadcasts/:videoId', (req, res) => {
+    try {
+      if (req.user?.role !== 'admin') return res.status(403).json({ error: '권한 없음' });
+      const row = BroadcastState.get(req.params.videoId);
+      if (row?.audio_path) {
+        try { require('fs').unlinkSync(row.audio_path); } catch {}
+      }
+      const n = BroadcastState.deleteOne(req.params.videoId);
+      if (n === 0) return res.status(404).json({ error: '방송 없음' });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });

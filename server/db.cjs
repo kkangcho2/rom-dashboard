@@ -614,6 +614,46 @@ try {
   `);
 } catch (e) { console.warn('[DB] job_queue run_at normalize failed:', e.message); }
 
+// Phase 4: 방송 단위 처리 상태 (videoId 1개 = row 1개)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS broadcast_processing_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_id TEXT NOT NULL UNIQUE,
+      channel_id TEXT NOT NULL,
+      campaign_id TEXT,
+      campaign_creator_id TEXT,
+      is_live INTEGER NOT NULL DEFAULT 0,
+      actual_start_time TEXT,
+      actual_end_time TEXT,
+      duration_sec INTEGER,
+      title TEXT,
+      discovery_source TEXT,
+      state TEXT NOT NULL DEFAULT 'discovered',
+      state_history TEXT DEFAULT '[]',
+      transcript_source TEXT,
+      transcript_id INTEGER,
+      transcript_chars INTEGER DEFAULT 0,
+      audio_path TEXT,
+      stt_provider TEXT,
+      stt_cost_cents INTEGER DEFAULT 0,
+      error_log TEXT DEFAULT '[]',
+      retry_count INTEGER DEFAULT 0,
+      next_poll_at TEXT,
+      report_id INTEGER,
+      delivered_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
+      FOREIGN KEY (transcript_id) REFERENCES transcripts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bps_state ON broadcast_processing_state(state, next_poll_at);
+    CREATE INDEX IF NOT EXISTS idx_bps_channel ON broadcast_processing_state(channel_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_bps_campaign ON broadcast_processing_state(campaign_id, state);
+    CREATE INDEX IF NOT EXISTS idx_bps_endtime ON broadcast_processing_state(actual_end_time);
+  `);
+} catch (e) { console.error('[DB] broadcast_processing_state init failed:', e.message); }
+
 // System health check history
 try {
   db.exec(`

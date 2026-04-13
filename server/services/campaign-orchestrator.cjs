@@ -26,6 +26,10 @@ try { Matcher = require('./campaign-broadcast-matcher.cjs'); } catch {}
 let HealthCheck = null;
 try { HealthCheck = require('./health-check.cjs'); } catch {}
 
+// Phase 4 broadcast handlers (lazy)
+let BroadcastOrch = null;
+try { BroadcastOrch = require('./broadcast-orchestrator.cjs'); } catch {}
+
 // ─── Job Handlers ───────────────────────────────────────────────
 
 /**
@@ -132,6 +136,8 @@ const JOB_HANDLERS = {
   match_campaign_broadcast: handleMatchCampaignBroadcast,
   generate_campaign_report: handleGenerateCampaignReport,
   send_campaign_email: handleSendCampaignEmail,
+  // Phase 4 — 방송 처리 파이프라인
+  ...(BroadcastOrch ? BroadcastOrch.HANDLERS : {}),
 };
 
 // ─── Periodic Scanner ───────────────────────────────────────────

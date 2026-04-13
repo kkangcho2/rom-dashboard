@@ -23,6 +23,7 @@ import {
   AdminEmailDeliveryPage,
   AdminCreatorsPage,
   AdminSettingsPage,
+  AdminBroadcastsPage,
 } from './pages/Admin';
 import useAuthStore from './store/useAuthStore';
 
@@ -53,6 +54,7 @@ export default function SaasAdmin() {
     { id: 'automation-dashboard', label: '운영 관제실', icon: Activity, group: 'automation' },
     { id: 'campaigns', label: '캠페인', icon: Megaphone, group: 'automation' },
     { id: 'stream-monitor', label: '방송 모니터링', icon: Monitor, group: 'automation' },
+    { id: 'broadcasts', label: '방송 처리', icon: Monitor, group: 'automation' },
     { id: 'review-queue', label: '검수 큐', icon: Eye, group: 'automation' },
     { id: 'report-center', label: '리포트 센터', icon: FileText, group: 'automation' },
     { id: 'job-queue', label: '작업 큐', icon: Server, group: 'automation' },
@@ -291,6 +293,7 @@ export default function SaasAdmin() {
               {currentPage === 'review-queue' && <AdminReviewQueuePage onNavigate={handleNavigate} />}
               {currentPage === 'job-queue' && <AdminJobQueuePage />}
               {currentPage === 'stream-monitor' && <AdminStreamMonitorPage onNavigate={handleNavigate} />}
+              {currentPage === 'broadcasts' && <AdminBroadcastsPage />}
               {currentPage === 'report-center' && <AdminReportCenterPage onNavigate={handleNavigate} />}
               {currentPage === 'report-detail' && <AdminReportDetailPage reportId={pageParams.reportId} onNavigate={handleNavigate} />}
               {currentPage === 'email-delivery' && <AdminEmailDeliveryPage />}

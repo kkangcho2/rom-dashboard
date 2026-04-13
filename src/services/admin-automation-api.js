@@ -66,6 +66,22 @@ export const getHealth = () => fetchJson('/health');
 export const runHealthCheckNow = () => post('/health/check-now');
 export const getHealthHistory = (checkName) => fetchJson(`/health/${checkName}`);
 
+// ─── Phase 4: Broadcast Processing ─────────────────────────────
+export const getBroadcasts = (params = {}) => {
+  const q = new URLSearchParams(params).toString();
+  return fetchJson(`/broadcasts${q ? `?${q}` : ''}`);
+};
+export const getBroadcastDetail = (videoId) => fetchJson(`/broadcasts/${videoId}`);
+export const discoverBroadcastsNow = (body) =>
+  fetchJson('/broadcasts/discover-now', { method: 'POST', body: JSON.stringify(body) });
+export const retryBroadcast = (videoId) => post(`/broadcasts/${videoId}/retry`);
+export const submitManualTranscript = (videoId, transcript, language = 'ko') =>
+  fetchJson(`/broadcasts/${videoId}/manual-transcript`, {
+    method: 'POST',
+    body: JSON.stringify({ transcript, language }),
+  });
+export const deleteBroadcast = (videoId) => fetchJson(`/broadcasts/${videoId}`, { method: 'DELETE' });
+
 // ─── Review Queue ───────────────────────────────────────────
 export const getReviewQueue = (params = {}) => {
   const q = new URLSearchParams(params).toString();

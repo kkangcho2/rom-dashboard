@@ -9,3 +9,4 @@ export { default as AdminReportDetailPage } from './AdminReportDetailPage';
 export { default as AdminEmailDeliveryPage } from './AdminEmailDeliveryPage';
 export { default as AdminCreatorsPage } from './AdminCreatorsPage';
 export { default as AdminSettingsPage } from './AdminSettingsPage';
+export { default as AdminBroadcastsPage } from './AdminBroadcastsPage';
