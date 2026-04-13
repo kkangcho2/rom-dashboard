@@ -3,10 +3,11 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Settings, Save, RefreshCw, Zap, Clock, Mail, Hash, Plus, X, Radar, Play
+  Settings, Save, RefreshCw, Zap, Clock, Mail, Hash, Plus, X, Radar, Play, Cookie, Upload, AlertTriangle
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
 import { getSettings, updateSettings, triggerScanNow } from '../../services/admin-automation-api';
+import { authFetch } from '../../store/useAuthStore';
 
 // ─── 8 Matching Signals Meta ────────────────────────────────────
 const SIGNAL_META = [
@@ -300,6 +301,9 @@ export default function AdminSettingsPage() {
         </div>
       </GlassCard>
 
+      {/* YouTube 쿠키 업로드 */}
+      <YoutubeCookieSection />
+
       {/* 키워드 관리 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <KeywordManager
@@ -325,6 +329,116 @@ export default function AdminSettingsPage() {
         마지막 업데이트: {formatDate(settings.updated_at)}
       </div>
     </div>
+  );
+}
+
+// ─── YouTube 쿠키 섹션 ─────────────────────────────────────────
+function YoutubeCookieSection() {
+  const [status, setStatus] = useState({ hasCookies: false, loading: true });
+  const [cookieText, setCookieText] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const loadStatus = async () => {
+    try {
+      const res = await authFetch('/yt/status');
+      const j = await res.json();
+      setStatus({ hasCookies: !!j.hasCookies, loading: false });
+    } catch { setStatus({ hasCookies: false, loading: false }); }
+  };
+  useEffect(() => { loadStatus(); }, []);
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setCookieText(ev.target.result);
+    reader.readAsText(f);
+  };
+
+  const upload = async () => {
+    if (!cookieText || cookieText.length < 50) {
+      setMsg('쿠키 내용이 너무 짧습니다');
+      return;
+    }
+    setUploading(true);
+    try {
+      const res = await authFetch('/yt/upload-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: cookieText,
+      });
+      const j = await res.json();
+      setMsg(j.ok ? '✅ 쿠키 업로드 성공!' : '❌ ' + j.error);
+      if (j.ok) loadStatus();
+    } catch (e) { setMsg('❌ ' + e.message); }
+    setUploading(false);
+    setTimeout(() => setMsg(''), 5000);
+  };
+
+  return (
+    <GlassCard className="p-5">
+      <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+        <Cookie size={14} className="text-amber-400" /> YouTube 쿠키 (Transcript 봇 차단 우회)
+      </h3>
+      <p className="text-[10px] text-slate-500 mb-4">
+        YouTube가 데이터센터 IP에서의 자막 다운로드를 차단합니다. 본인 YouTube 로그인 쿠키를 업로드하면
+        Transcript 자동 추출이 정상 작동합니다.
+      </p>
+
+      {/* 현재 상태 */}
+      <div className={`mb-4 p-3 rounded-lg border flex items-center gap-3 ${status.hasCookies ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+        {status.hasCookies ? (
+          <>
+            <Cookie size={14} className="text-emerald-400" />
+            <span className="text-xs text-emerald-300">쿠키 등록됨 (Transcript 자동 추출 가능)</span>
+          </>
+        ) : (
+          <>
+            <AlertTriangle size={14} className="text-amber-400" />
+            <span className="text-xs text-amber-300">쿠키 없음 — Transcript 자동 추출이 봇 차단으로 실패할 수 있습니다</span>
+          </>
+        )}
+      </div>
+
+      {/* 가이드 */}
+      <details className="mb-3 p-3 rounded bg-[#0a0e1a]/50 border border-[#374766]/20 text-[10px] text-slate-400">
+        <summary className="cursor-pointer text-slate-300 font-medium">📖 쿠키 추출 방법</summary>
+        <ol className="mt-2 ml-4 space-y-1 list-decimal">
+          <li>크롬 확장 <a className="text-indigo-400 underline" href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener noreferrer">"Get cookies.txt LOCALLY"</a> 설치</li>
+          <li>YouTube에 로그인된 상태에서 youtube.com 접속</li>
+          <li>확장 아이콘 클릭 → "Export" → cookies.txt 다운로드</li>
+          <li>아래 파일 선택 또는 텍스트 붙여넣기 → "업로드"</li>
+        </ol>
+      </details>
+
+      {/* 업로드 영역 */}
+      <div className="space-y-2">
+        <input
+          type="file"
+          accept=".txt"
+          onChange={handleFile}
+          className="block w-full text-[10px] text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-indigo-500/20 file:text-indigo-300 file:text-[10px] hover:file:bg-indigo-500/30"
+        />
+        <textarea
+          value={cookieText}
+          onChange={e => setCookieText(e.target.value)}
+          placeholder="또는 cookies.txt 내용을 직접 붙여넣기..."
+          rows={4}
+          className="w-full px-2.5 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-[10px] text-slate-300 font-mono focus:outline-none focus:border-indigo-500/60"
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={upload}
+            disabled={uploading || !cookieText}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/25 disabled:opacity-50"
+          >
+            <Upload size={12} /> {uploading ? '업로드 중...' : '쿠키 업로드'}
+          </button>
+          {msg && <span className="text-[10px] text-slate-300">{msg}</span>}
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 

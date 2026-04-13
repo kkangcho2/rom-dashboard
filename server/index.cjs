@@ -185,7 +185,8 @@ app.listen(PORT, () => {
     });
   }
   if (process.env.NODE_ENV === 'production') {
-    setTimeout(updateYtDlp, 10 * 60 * 1000); // 10분 후 첫 업데이트
+    // 부팅 후 30초 내 즉시 최신 nightly로 업데이트 (구버전 때문에 transcript 실패 방지)
+    setTimeout(updateYtDlp, 30 * 1000);
     setInterval(updateYtDlp, 24 * 60 * 60 * 1000); // 24시간마다
   }
 });
