@@ -18,8 +18,68 @@ const COOKIE_PATH = process.env.COOKIE_PATH || '/data/cookies.txt';
 // ─── Shared Google Auth + YouTube Data API (서비스 계정/API 키) ──
 const { getGoogleAccessToken, ytApiGet, clearTokenCache, SA_JSON_PATH, YT_API_KEY } = require('../utils/google-auth.cjs');
 
-// ─── innertube 클라이언트 설정 ────────────────────────────
+// ─── Helper: HTML에서 balanced JSON 객체 추출 ───────────────
+// ytInitialPlayerResponse = {...}; 패턴의 JSON을 정확한 중괄호 매칭으로 추출
+function extractBalancedJson(html, varName) {
+  const anchor = new RegExp(`(?:var\\s+)?${varName}\\s*=\\s*\\{`);
+  const match = html.match(anchor);
+  if (!match) return null;
+  const start = match.index + match[0].length - 1; // '{' 위치
+
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < html.length; i++) {
+    const ch = html[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inStr) { escape = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return html.substring(start, i + 1);
+    }
+  }
+  return null;
+}
+
+// ─── innertube 클라이언트 설정 (2026-04 기준 최신) ───────────
+// yt-dlp 최신 릴리스와 동일 버전 사용. WEB → MWEB → TV_EMBED → IOS → ANDROID 순
 const INNERTUBE_CLIENTS = [
+  {
+    name: 'WEB',
+    apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+    context: {
+      client: {
+        clientName: 'WEB',
+        clientVersion: '2.20250214.01.00',
+        hl: 'ko', gl: 'KR',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+      },
+    },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+      'X-Youtube-Client-Name': '1',
+      'X-Youtube-Client-Version': '2.20250214.01.00',
+    },
+  },
+  {
+    name: 'MWEB',
+    apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+    context: {
+      client: {
+        clientName: 'MWEB',
+        clientVersion: '2.20250214.01.00',
+        hl: 'ko', gl: 'KR',
+      },
+    },
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      'X-Youtube-Client-Name': '2',
+      'X-Youtube-Client-Version': '2.20250214.01.00',
+    },
+  },
   {
     name: 'TV_EMBED',
     apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
@@ -29,25 +89,12 @@ const INNERTUBE_CLIENTS = [
         clientVersion: '2.0',
         hl: 'ko', gl: 'KR',
       },
-      thirdParty: { embedUrl: 'https://www.google.com' },
-    },
-    headers: { 'User-Agent': 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36' },
-  },
-  {
-    name: 'ANDROID',
-    apiKey: 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w',
-    context: {
-      client: {
-        clientName: 'ANDROID',
-        clientVersion: '19.09.37',
-        androidSdkVersion: 30,
-        hl: 'ko', gl: 'KR',
-      },
+      thirdParty: { embedUrl: 'https://www.youtube.com/' },
     },
     headers: {
-      'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 12; SM-G991B) gzip',
-      'X-Youtube-Client-Name': '3',
-      'X-Youtube-Client-Version': '19.09.37',
+      'User-Agent': 'Mozilla/5.0 (PlayStation 4/9.50) AppleWebKit/605.1.15 (KHTML, like Gecko) YouTube/1.17 Safari/605.1.15',
+      'X-Youtube-Client-Name': '85',
+      'X-Youtube-Client-Version': '2.0',
     },
   },
   {
@@ -56,29 +103,36 @@ const INNERTUBE_CLIENTS = [
     context: {
       client: {
         clientName: 'IOS',
-        clientVersion: '19.09.3',
+        clientVersion: '19.45.4',
         deviceModel: 'iPhone16,2',
+        osName: 'iPhone',
+        osVersion: '18.1.0.22B83',
         hl: 'ko', gl: 'KR',
       },
     },
     headers: {
-      'User-Agent': 'com.google.ios.youtube/19.09.3 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)',
+      'User-Agent': 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)',
       'X-Youtube-Client-Name': '5',
-      'X-Youtube-Client-Version': '19.09.3',
+      'X-Youtube-Client-Version': '19.45.4',
     },
   },
   {
-    name: 'WEB',
-    apiKey: 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+    name: 'ANDROID',
+    apiKey: 'AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w',
     context: {
       client: {
-        clientName: 'WEB',
-        clientVersion: '2.20240313.05.00',
+        clientName: 'ANDROID',
+        clientVersion: '19.44.38',
+        androidSdkVersion: 34,
+        osName: 'Android',
+        osVersion: '14',
         hl: 'ko', gl: 'KR',
       },
     },
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+      'User-Agent': 'com.google.android.youtube/19.44.38 (Linux; U; Android 14; SM-S928B) gzip',
+      'X-Youtube-Client-Name': '3',
+      'X-Youtube-Client-Version': '19.44.38',
     },
   },
 ];
@@ -317,24 +371,56 @@ module.exports = function(db) {
         const playerData = await fetchPlayerInnerTube(videoId);
         const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
         if (tracks?.length) {
-          const koTrack = tracks.find(t => t.languageCode === 'ko') || tracks[0];
+          // 한국어 우선, 없으면 자동생성 한국어, 그 다음 영어
+          const koTrack = tracks.find(t => t.languageCode === 'ko' && t.kind !== 'asr')
+                        || tracks.find(t => t.languageCode === 'ko')
+                        || tracks.find(t => t.languageCode === 'en')
+                        || tracks[0];
           if (koTrack?.baseUrl) {
-            console.log(`[Transcript] 자막 URL 발견 (${koTrack.languageCode})`);
-            const { data: xml } = await axios.get(koTrack.baseUrl, { timeout: 10000 });
-            const $ = cheerio.load(xml, { xmlMode: true });
-            const lines = [];
-            $('text').each((_, el) => {
-              const t = $(el).text().trim();
-              if (t) lines.push(t);
-            });
-            if (lines.length > 0) {
-              const unique = [];
-              for (const l of lines) { if (!unique.length || unique[unique.length-1] !== l) unique.push(l); }
-              const transcript = unique.join(' ').replace(/\s+/g, ' ').trim();
-              if (transcript.length >= 10) {
-                console.log(`[Transcript] innertube 성공! ${unique.length}줄`);
-                return res.json({ ok: true, transcript, lines: unique.length });
+            console.log(`[Transcript] 자막 URL 발견 (lang=${koTrack.languageCode}, kind=${koTrack.kind || 'manual'})`);
+            // JSON3 포맷을 선호 (더 안정적)
+            const jsonUrl = koTrack.baseUrl.includes('fmt=') ? koTrack.baseUrl : koTrack.baseUrl + '&fmt=json3';
+            let transcript = '';
+            let linesCount = 0;
+
+            try {
+              const { data } = await axios.get(jsonUrl, { timeout: 10000 });
+              if (data?.events) {
+                const parts = [];
+                for (const ev of data.events) {
+                  if (!ev.segs) continue;
+                  const line = ev.segs.map(s => s.utf8).join('').replace(/\n/g, ' ').trim();
+                  if (line) parts.push(line);
+                }
+                const unique = [];
+                for (const l of parts) if (!unique.length || unique[unique.length-1] !== l) unique.push(l);
+                transcript = unique.join(' ').replace(/\s+/g, ' ').trim();
+                linesCount = unique.length;
               }
+            } catch (jsonErr) {
+              console.log('[Transcript] JSON3 실패, XML 폴백:', jsonErr.message);
+            }
+
+            // JSON3 실패 시 XML 원본 시도
+            if (transcript.length < 10) {
+              const { data: xml } = await axios.get(koTrack.baseUrl, { timeout: 10000 });
+              const $ = cheerio.load(xml, { xmlMode: true });
+              const lines = [];
+              $('text').each((_, el) => {
+                const t = $(el).text().trim();
+                if (t) lines.push(t);
+              });
+              if (lines.length > 0) {
+                const unique = [];
+                for (const l of lines) if (!unique.length || unique[unique.length-1] !== l) unique.push(l);
+                transcript = unique.join(' ').replace(/\s+/g, ' ').trim();
+                linesCount = unique.length;
+              }
+            }
+
+            if (transcript.length >= 10) {
+              console.log(`[Transcript] innertube 성공! ${linesCount}줄`);
+              return res.json({ ok: true, transcript, lines: linesCount });
             }
           }
         }
@@ -342,6 +428,101 @@ module.exports = function(db) {
       } catch (e) {
         errors.push(`innertube: ${e.message}`);
         console.log('[Transcript] innertube 실패:', e.message);
+      }
+
+      // 2) Watch 페이지 HTML → ytInitialPlayerResponse 파싱 (innertube 차단 우회)
+      try {
+        console.log('[Transcript] watch 페이지 HTML 파싱 시도');
+        const { data: html } = await axios.get(
+          `https://www.youtube.com/watch?v=${videoId}&hl=ko`,
+          {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+            },
+            timeout: 15000,
+          }
+        );
+
+        // ytInitialPlayerResponse = {...}; 형태로 HTML에 인라인됨
+        // 중첩 JSON 객체의 끝을 찾기 위해 balanced brace 파서 사용
+        const jsonStr = extractBalancedJson(html, 'ytInitialPlayerResponse');
+        if (jsonStr) {
+          try {
+            const playerResponse = JSON.parse(jsonStr);
+            const tracks = playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            if (tracks?.length) {
+              // 한국어 수동 → 한국어 ASR → 영어 순
+              const track = tracks.find(t => t.languageCode === 'ko' && t.kind !== 'asr')
+                         || tracks.find(t => t.languageCode === 'ko')
+                         || tracks.find(t => t.languageCode === 'en')
+                         || tracks[0];
+              if (track?.baseUrl) {
+                console.log(`[Transcript] watch-html caption found (lang=${track.languageCode}, kind=${track.kind || 'manual'})`);
+                const capUrl = track.baseUrl.includes('fmt=') ? track.baseUrl : track.baseUrl + '&fmt=json3';
+                const { data } = await axios.get(capUrl, { timeout: 10000 });
+                const parts = [];
+                if (data?.events) {
+                  for (const ev of data.events) {
+                    if (!ev.segs) continue;
+                    const line = ev.segs.map(s => s.utf8).join('').replace(/\n/g, ' ').trim();
+                    if (line) parts.push(line);
+                  }
+                }
+                const unique = [];
+                for (const l of parts) if (!unique.length || unique[unique.length-1] !== l) unique.push(l);
+                const transcript = unique.join(' ').replace(/\s+/g, ' ').trim();
+                if (transcript.length >= 10) {
+                  console.log(`[Transcript] watch-html 성공! ${unique.length}줄`);
+                  return res.json({ ok: true, transcript, lines: unique.length });
+                }
+              }
+            } else {
+              errors.push('watch-html: captionTracks 없음 (자막 없는 영상일 수 있음)');
+            }
+          } catch (parseErr) {
+            errors.push(`watch-html parse: ${parseErr.message}`);
+          }
+        } else {
+          errors.push('watch-html: playerResponse 추출 실패');
+        }
+      } catch (e) {
+        errors.push(`watch-html: ${e.message}`);
+        console.log('[Transcript] watch-html 실패:', e.message);
+      }
+
+      // 3) timedtext API 직접 호출 (캡션 track URL 없이도 시도)
+      try {
+        console.log('[Transcript] timedtext API 시도');
+        const candidates = [
+          { lang: 'ko', kind: '' },
+          { lang: 'ko', kind: 'asr' },
+          { lang: 'en', kind: '' },
+          { lang: 'en', kind: 'asr' },
+        ];
+        for (const c of candidates) {
+          const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${c.lang}${c.kind ? '&kind=' + c.kind : ''}&fmt=json3`;
+          try {
+            const { data, status } = await axios.get(url, { timeout: 8000, validateStatus: () => true });
+            if (status !== 200 || !data?.events?.length) continue;
+            const parts = [];
+            for (const ev of data.events) {
+              if (!ev.segs) continue;
+              const line = ev.segs.map(s => s.utf8).join('').replace(/\n/g, ' ').trim();
+              if (line) parts.push(line);
+            }
+            const unique = [];
+            for (const l of parts) if (!unique.length || unique[unique.length-1] !== l) unique.push(l);
+            const transcript = unique.join(' ').replace(/\s+/g, ' ').trim();
+            if (transcript.length >= 10) {
+              console.log(`[Transcript] timedtext 성공 (${c.lang}${c.kind ? '/' + c.kind : ''}) ${unique.length}줄`);
+              return res.json({ ok: true, transcript, lines: unique.length });
+            }
+          } catch {}
+        }
+        errors.push('timedtext: 모든 언어 실패');
+      } catch (e) {
+        errors.push(`timedtext: ${e.message}`);
       }
 
       // 2) yt-dlp (쿠키 있으면 사용)

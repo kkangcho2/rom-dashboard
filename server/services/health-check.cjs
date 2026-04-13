@@ -159,22 +159,39 @@ async function checkYoutubeVideoInfo() {
 async function checkYoutubeTranscript() {
   const start = Date.now();
   try {
-    // innertube 방식만 테스트 (yt-dlp는 환경 의존적)
+    // 1차: timedtext API 직접 호출 (가장 가볍고 안정적)
     const axios2 = require('axios');
+    const ttUrl = `https://www.youtube.com/api/timedtext?v=${TEST_YT_VIDEO_ID}&lang=en&kind=asr&fmt=json3`;
+    const ttRes = await axios2.get(ttUrl, { timeout: 8000, validateStatus: () => true });
+    if (ttRes.status === 200 && ttRes.data?.events?.length > 0) {
+      return {
+        check: 'yt_transcript',
+        status: 'ok',
+        latency: Date.now() - start,
+        message: `timedtext api ok (${ttRes.data.events.length} events)`,
+      };
+    }
+
+    // 2차: innertube WEB 최신 버전
     const { data } = await axios2.post(
       'https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
       {
         context: {
           client: {
-            clientName: 'ANDROID',
-            clientVersion: '19.09.37',
-            androidSdkVersion: 30,
+            clientName: 'WEB',
+            clientVersion: '2.20250214.01.00',
+            hl: 'ko', gl: 'KR',
           },
         },
         videoId: TEST_YT_VIDEO_ID,
       },
       {
-        headers: { 'content-type': 'application/json', 'x-youtube-client-name': '3' },
+        headers: {
+          'content-type': 'application/json',
+          'x-youtube-client-name': '1',
+          'x-youtube-client-version': '2.20250214.01.00',
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/132.0.0.0',
+        },
         timeout: 10000,
       }
     );
@@ -184,14 +201,14 @@ async function checkYoutubeTranscript() {
         check: 'yt_transcript',
         status: 'degraded',
         latency: Date.now() - start,
-        message: '인증/자막 경로 문제 추정 (captionTracks 없음)',
+        message: '자막 트랙 없음 (innertube 응답 정상)',
       };
     }
     return {
       check: 'yt_transcript',
       status: 'ok',
       latency: Date.now() - start,
-      message: `innertube ok (${tracks.length} caption tracks)`,
+      message: `innertube WEB ok (${tracks.length} caption tracks)`,
     };
   } catch (err) {
     const status = err.response?.status;
@@ -199,7 +216,7 @@ async function checkYoutubeTranscript() {
       check: 'yt_transcript',
       status: 'fail',
       latency: Date.now() - start,
-      message: status === 400 ? `innertube 400 (인증/클라 키 만료)` : err.message,
+      message: status === 400 ? `innertube 400 (클라이언트 버전/키 만료)` : err.message,
     };
   }
 }

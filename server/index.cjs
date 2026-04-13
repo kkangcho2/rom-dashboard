@@ -162,4 +162,30 @@ app.listen(PORT, () => {
   // Campaign Automation Worker 시작
   campaignOrchestrator.start();
   console.log(`  ├─ Campaign:  Automation Worker (started)`);
+
+  // yt-dlp 자동 업데이트 (서버 부팅 10분 후, 이후 24시간 주기)
+  // YouTube API 차단 주기적 발생 → nightly build 유지가 핵심
+  const { execFile } = require('child_process');
+  function updateYtDlp() {
+    execFile('yt-dlp', ['--update-to', 'nightly'], { timeout: 60000 }, (err, stdout, stderr) => {
+      if (err) {
+        // --update-to가 실패하면 curl로 latest 다시 다운로드
+        const { exec } = require('child_process');
+        exec(
+          'curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rwx /usr/local/bin/yt-dlp',
+          { timeout: 120000 },
+          (err2) => {
+            if (err2) console.warn('[yt-dlp] 업데이트 실패 (curl fallback도 실패):', err2.message);
+            else console.log('[yt-dlp] curl로 최신 버전 재다운로드 완료');
+          }
+        );
+        return;
+      }
+      console.log('[yt-dlp] 자동 업데이트 완료:', (stdout || '').trim().slice(0, 200));
+    });
+  }
+  if (process.env.NODE_ENV === 'production') {
+    setTimeout(updateYtDlp, 10 * 60 * 1000); // 10분 후 첫 업데이트
+    setInterval(updateYtDlp, 24 * 60 * 60 * 1000); // 24시간마다
+  }
 });
