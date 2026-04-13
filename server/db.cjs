@@ -602,6 +602,8 @@ try {
     INSERT OR IGNORE INTO system_settings (id) VALUES (1);
   `);
 } catch (e) { console.error('[DB] system_settings init failed:', e.message); }
+// Periodic scan interval (min). default 60min
+try { db.prepare("ALTER TABLE system_settings ADD COLUMN scan_interval_min INTEGER DEFAULT 60").run(); } catch {}
 
 // ─── 광고 게임 시드 ─────────────────────────────────────────
 const SPONSORED_GAMES = ['빅보스', '아키텍트', '뱀피르', 'RF온라인', '레이븐2'];

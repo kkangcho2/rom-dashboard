@@ -170,6 +170,7 @@ export default function AdminCampaignDetailPage({ campaignId, onNavigate }) {
           emails={reports.emails || []}
           onRegen={handleRegenReport}
           onResend={handleResendEmail}
+          onOpenReport={(id) => onNavigate?.('report-detail', { reportId: id })}
         />
       )}
       {tab === 'logs' && <LogsTab jobs={jobs} />}
@@ -467,7 +468,7 @@ function StreamsTab({ streams, onScan, onForceMatch, onExclude, onRematch }) {
 }
 
 // ─── Tab D: 리포트 ──────────────────────────────────────────────
-function ReportsTab({ verificationReports, deliveryReports, emails, onRegen, onResend }) {
+function ReportsTab({ verificationReports, deliveryReports, emails, onRegen, onResend, onOpenReport }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
@@ -479,56 +480,120 @@ function ReportsTab({ verificationReports, deliveryReports, emails, onRegen, onR
         </button>
       </div>
 
-      {/* 검증 리포트 (기존 데이터) */}
+      {/* 검증 리포트 — 최신 리포트의 크리에이터별 성과 (report_data.gridRows 파싱) */}
       <GlassCard className="p-5">
         <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-          <FileText size={14} className="text-emerald-400" /> 검증 리포트
-          <span className="text-[10px] text-slate-500 font-normal">({verificationReports.length}건)</span>
+          <FileText size={14} className="text-emerald-400" /> 검증 리포트 — 크리에이터별 성과
+          <span className="text-[10px] text-slate-500 font-normal">
+            (리포트 {verificationReports.length}건)
+          </span>
         </h3>
         {verificationReports.length === 0 ? (
           <div className="text-center py-6 text-slate-500 text-xs">검증 리포트가 없습니다</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-500 text-[10px] uppercase border-b border-[#374766]/20">
-                  <th className="text-left py-2 px-2">크리에이터</th>
-                  <th className="text-center py-2 px-2">방송시간</th>
-                  <th className="text-center py-2 px-2">배너노출</th>
-                  <th className="text-center py-2 px-2">노출률</th>
-                  <th className="text-center py-2 px-2">평균시청</th>
-                  <th className="text-center py-2 px-2">최대시청</th>
-                  <th className="text-center py-2 px-2">임프레션</th>
-                  <th className="text-center py-2 px-2">상태</th>
-                  <th className="text-left py-2 px-2">생성일</th>
-                </tr>
-              </thead>
-              <tbody>
-                {verificationReports.map(r => (
-                  <tr key={r.id} className="border-b border-[#374766]/10 hover:bg-[#1a2035]/50">
-                    <td className="py-2.5 px-2 text-white">{r.creator_name || '-'}</td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{r.total_stream_minutes || 0}분</td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{r.banner_exposed_minutes || 0}분</td>
-                    <td className="py-2.5 px-2 text-center">
-                      <span className={`font-bold ${(r.exposure_rate || 0) > 0.5 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {((r.exposure_rate || 0) * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{(r.avg_viewers_during || 0).toLocaleString()}</td>
-                    <td className="py-2.5 px-2 text-center text-indigo-400 font-bold">{(r.peak_viewers || 0).toLocaleString()}</td>
-                    <td className="py-2.5 px-2 text-center text-slate-300">{(r.total_impressions || 0).toLocaleString()}</td>
-                    <td className="py-2.5 px-2 text-center">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.status === 'generating' ? 'bg-emerald-500/20 text-emerald-400' : r.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-2 text-slate-500 text-[10px]">{formatDate(r.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ) : (() => {
+          // 가장 최신 리포트의 gridRows를 크리에이터별로 표시
+          const latest = verificationReports[0];
+          let gridRows = [];
+          let summary = {};
+          try {
+            const parsed = typeof latest.report_data === 'string' ? JSON.parse(latest.report_data) : latest.report_data;
+            gridRows = parsed?.gridRows || [];
+            summary = parsed?.summary || {};
+          } catch {}
+
+          if (gridRows.length === 0) {
+            return <div className="text-center py-6 text-slate-500 text-xs">리포트 내부 데이터를 파싱할 수 없습니다</div>;
+          }
+
+          return (
+            <>
+              <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-3 px-2">
+                <span>최신 생성: <span className="text-slate-300">{formatDate(latest.created_at)}</span></span>
+                <span>·</span>
+                <span>기간: <span className="text-slate-300">{summary.dateRange || '-'}</span></span>
+                <span>·</span>
+                <span>총 영상: <span className="text-cyan-400 font-bold">{summary.totalVideos || 0}</span></span>
+                <span>·</span>
+                <span>총 조회수: <span className="text-emerald-400 font-bold">{(summary.totalViews || 0).toLocaleString()}</span></span>
+                <button onClick={() => onOpenReport?.(latest.id)} className="ml-auto text-indigo-400 hover:text-indigo-300">
+                  전체 리포트 상세 보기 →
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-500 text-[10px] uppercase border-b border-[#374766]/20">
+                      <th className="text-left py-2 px-2">크리에이터</th>
+                      <th className="text-center py-2 px-2">구독자</th>
+                      <th className="text-center py-2 px-2">방송 수</th>
+                      <th className="text-center py-2 px-2">총 영상</th>
+                      <th className="text-center py-2 px-2">총 조회수</th>
+                      <th className="text-center py-2 px-2">평균 조회수</th>
+                      <th className="text-left py-2 px-2">서버/캐릭</th>
+                      <th className="text-center py-2 px-2">상태</th>
+                      <th className="text-center py-2 px-2">상세</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gridRows.map(row => (
+                      <tr
+                        key={row.creatorId}
+                        onClick={() => onOpenReport?.(latest.id)}
+                        className="border-b border-[#374766]/10 hover:bg-indigo-500/10 cursor-pointer transition"
+                      >
+                        <td className="py-2.5 px-2">
+                          <div className="text-white font-medium">{row.creatorName}</div>
+                          <div className="text-[9px] text-slate-600 truncate max-w-[160px]">{row.channelId}</div>
+                        </td>
+                        <td className="py-2.5 px-2 text-center text-slate-300">{(row.subscribers || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-center">
+                          <span className="text-indigo-400 font-bold">{row.broadcastCount || 0}</span>
+                        </td>
+                        <td className="py-2.5 px-2 text-center text-slate-300">{row.totalVideos || 0}</td>
+                        <td className="py-2.5 px-2 text-center text-emerald-400 font-bold">{(row.totalViews || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-center text-slate-300">{(row.avgViews || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-slate-400 text-[10px]">
+                          {row.serverName || '-'}{row.characterName ? ` / ${row.characterName}` : ''}
+                        </td>
+                        <td className="py-2.5 px-2 text-center">
+                          {row.error ? (
+                            <span className="text-red-400 text-[10px]">{row.error}</span>
+                          ) : (
+                            <span className="text-emerald-400 text-[10px]">완료</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-2 text-center">
+                          <span className="text-[10px] text-indigo-400 font-medium hover:text-indigo-300">상세 →</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 이전 리포트 생성 이력 */}
+              {verificationReports.length > 1 && (
+                <div className="mt-4 pt-3 border-t border-[#374766]/20">
+                  <div className="text-[10px] text-slate-500 mb-2">이전 리포트 생성 이력 ({verificationReports.length - 1}건)</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {verificationReports.slice(1).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => onOpenReport?.(r.id)}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] bg-[#0a0e1a]/60 border border-[#374766]/30 hover:border-indigo-500/40 hover:bg-indigo-500/10 transition"
+                      >
+                        <span className="text-slate-400">{formatDate(r.created_at)}</span>
+                        <span className={`px-1 py-0.5 rounded text-[9px] ${r.status === 'generating' || r.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'}`}>
+                          {r.status}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </GlassCard>
 
       {/* 배송 리포트 (자동화) */}

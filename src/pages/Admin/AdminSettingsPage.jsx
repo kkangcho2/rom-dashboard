@@ -3,10 +3,10 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Settings, Save, RefreshCw, Zap, Clock, Mail, Hash, Plus, X
+  Settings, Save, RefreshCw, Zap, Clock, Mail, Hash, Plus, X, Radar, Play
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getSettings, updateSettings } from '../../services/admin-automation-api';
+import { getSettings, updateSettings, triggerScanNow } from '../../services/admin-automation-api';
 
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState(null);
@@ -119,6 +119,46 @@ export default function AdminSettingsPage() {
           </div>
           <div className="text-[9px] text-slate-600 mt-2">
             빈 값 = 기본 가중치 사용 (channel:0.25, date:0.15, title:0.20, game:0.10, sponsor:0.08, banner:0.15, transcript:0.05, chat:0.02)
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* 주기 스캔 설정 */}
+      <GlassCard className="p-5">
+        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+          <Radar size={14} className="text-emerald-400" /> 주기 방송 스캔
+        </h3>
+        <p className="text-[10px] text-slate-500 mb-4">
+          LIVE 상태 캠페인의 방송을 주기적으로 자동 감지합니다. 캠페인별 자동 모니터링이 꺼져있으면 스캔 제외됩니다.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+            <label className="text-xs text-white font-medium block mb-2">스캔 간격 (분)</label>
+            <input type="number" min="10" max="1440"
+              value={settings.scan_interval_min ?? 60}
+              onChange={e => updateField('scan_interval_min', parseInt(e.target.value) || 60)}
+              className="w-full px-2 py-1.5 rounded bg-[#111827] border border-[#374766]/40 text-xs text-white focus:outline-none focus:border-indigo-500/60" />
+            <div className="text-[10px] text-slate-500 mt-1">최소 10분 (rate limit 안전). 기본 60분</div>
+          </div>
+          <div className="p-3 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20 flex flex-col justify-between">
+            <div>
+              <label className="text-xs text-white font-medium block mb-1">즉시 스캔</label>
+              <div className="text-[10px] text-slate-500">모든 LIVE 캠페인에 대해 지금 바로 스캔 실행</div>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const r = await triggerScanNow();
+                  setMsg(`스캔 등록: ${r.stats?.enqueued || 0}건 (live: ${r.stats?.totalLiveCampaigns || 0}, skipped: ${r.stats?.skipped || 0})`);
+                  setTimeout(() => setMsg(''), 4000);
+                } catch (err) {
+                  setMsg('스캔 실패: ' + err.message);
+                }
+              }}
+              className="mt-2 flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/25 transition text-xs"
+            >
+              <Play size={12} /> 즉시 스캔 실행
+            </button>
           </div>
         </div>
       </GlassCard>

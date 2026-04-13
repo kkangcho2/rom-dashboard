@@ -108,6 +108,106 @@ const JOB_HANDLERS = {
   send_campaign_email: handleSendCampaignEmail,
 };
 
+// ─── Periodic Scanner ───────────────────────────────────────────
+
+const DEFAULT_SCAN_INTERVAL_MIN = 60;        // 기본 60분 주기 스캔
+const MIN_SCAN_INTERVAL_MIN = 10;            // 최소 10분 (rate limit 안전)
+const DEFAULT_START_DELAY_MIN = 5;           // 서버 부팅 후 5분 뒤 첫 스캔
+
+let scanTimer = null;
+let lastScanAt = null;
+let lastScanStats = null;
+
+/**
+ * 주기 스캔 1회 실행.
+ * - state='live' 캠페인 전체를 sync_campaign_streams 잡으로 등록
+ * - 시간 단위 dedupe_key로 같은 시간대 중복 방지
+ */
+function runPeriodicScan() {
+  try {
+    const liveCampaigns = db.prepare("SELECT id, title FROM campaigns WHERE state = 'live'").all();
+
+    // 시간 버킷 (같은 시각 중복 방지). YYYYMMDDHH
+    const d = new Date();
+    const hourBucket = `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}`;
+
+    let enqueued = 0;
+    let skipped = 0;
+
+    for (const c of liveCampaigns) {
+      // 캠페인 자동 모니터링 옵션 체크
+      const opt = db.prepare('SELECT auto_monitoring_enabled FROM campaigns WHERE id = ?').get(c.id);
+      if (opt && opt.auto_monitoring_enabled === 0) {
+        skipped++;
+        continue;
+      }
+
+      const result = jobQueue.enqueue({
+        jobType: 'sync_campaign_streams',
+        payload: { campaignId: c.id, source: 'periodic_scan' },
+        dedupeKey: `campaign:${c.id}:periodic_scan:${hourBucket}`,
+        priority: 8,
+      });
+
+      if (result.inserted) enqueued++;
+      else skipped++;
+    }
+
+    lastScanAt = new Date().toISOString();
+    lastScanStats = { totalLiveCampaigns: liveCampaigns.length, enqueued, skipped, hourBucket };
+
+    if (liveCampaigns.length > 0) {
+      console.log(`[Orchestrator] Periodic scan: live=${liveCampaigns.length}, enqueued=${enqueued}, skipped=${skipped}, bucket=${hourBucket}`);
+    }
+  } catch (err) {
+    console.error('[Orchestrator] Periodic scan failed:', err.message);
+  }
+}
+
+/**
+ * 시스템 설정에서 스캔 간격(분) 로드.
+ * system_settings.polling_interval_sec를 재사용하지 않고 별도 확장.
+ * scan_interval_min 컬럼이 없으면 기본값 사용.
+ */
+function getScanIntervalMin() {
+  try {
+    const row = db.prepare('SELECT scan_interval_min FROM system_settings WHERE id = 1').get();
+    if (row && row.scan_interval_min != null) {
+      return Math.max(MIN_SCAN_INTERVAL_MIN, parseInt(row.scan_interval_min));
+    }
+  } catch {}
+  return DEFAULT_SCAN_INTERVAL_MIN;
+}
+
+function startPeriodicScan() {
+  if (scanTimer) return;
+
+  const intervalMin = getScanIntervalMin();
+  console.log(`[Orchestrator] Periodic scanner started (interval: ${intervalMin}min, first run in ${DEFAULT_START_DELAY_MIN}min)`);
+
+  // 서버 부팅 직후 바로 스캔하지 않고, 안정화 후 실행
+  setTimeout(() => {
+    runPeriodicScan();
+    scanTimer = setInterval(runPeriodicScan, intervalMin * 60 * 1000);
+  }, DEFAULT_START_DELAY_MIN * 60 * 1000);
+}
+
+function stopPeriodicScan() {
+  if (scanTimer) {
+    clearInterval(scanTimer);
+    scanTimer = null;
+    console.log('[Orchestrator] Periodic scanner stopped');
+  }
+}
+
+/**
+ * 수동 즉시 스캔 (관리자 버튼용)
+ */
+function triggerScanNow() {
+  runPeriodicScan();
+  return lastScanStats;
+}
+
 // ─── Orchestrator Lifecycle ─────────────────────────────────────
 let worker = null;
 
@@ -126,6 +226,7 @@ function start() {
   console.log(`[Orchestrator] Matcher: ${Matcher ? 'loaded' : 'not available'}`);
 
   worker = jobQueue.startWorker(JOB_HANDLERS, 'campaign-orchestrator');
+  startPeriodicScan();
 }
 
 /**
@@ -137,6 +238,7 @@ function stop() {
     worker = null;
     console.log('[Orchestrator] Stopped');
   }
+  stopPeriodicScan();
 }
 
 /**
@@ -149,6 +251,12 @@ function getStatus() {
     handlers: Object.keys(JOB_HANDLERS),
     streamMonitorLoaded: !!StreamMonitor,
     matcherLoaded: !!Matcher,
+    periodicScan: {
+      active: !!scanTimer,
+      intervalMin: getScanIntervalMin(),
+      lastScanAt,
+      lastScanStats,
+    },
   };
 }
 
@@ -156,5 +264,6 @@ module.exports = {
   start,
   stop,
   getStatus,
+  triggerScanNow,
   JOB_HANDLERS,
 };

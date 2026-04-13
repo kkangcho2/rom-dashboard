@@ -45,6 +45,7 @@ export const getCreatorDetail = (id) => fetchJson(`/creators/${id}`);
 // ─── Settings ───────────────────────────────────────────────
 export const getSettings = () => fetchJson('/settings');
 export const updateSettings = (body) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(body) });
+export const triggerScanNow = () => post('/scan-now');
 
 // ─── Review Queue ───────────────────────────────────────────
 export const getReviewQueue = (params = {}) => {

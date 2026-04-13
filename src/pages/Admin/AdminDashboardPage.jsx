@@ -165,6 +165,22 @@ export default function AdminDashboardPage({ onNavigate }) {
               핸들러 {orchestrator.handlers?.length || 0}개
             </span>
           </div>
+
+          {/* Periodic scan status */}
+          {orchestrator.periodicScan && (
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0a0e1a]/50 border border-[#374766]/20">
+              <div className={`w-2 h-2 rounded-full ${orchestrator.periodicScan.active ? 'bg-cyan-400 animate-pulse' : 'bg-slate-600'}`} />
+              <span className="text-[10px] text-slate-400">
+                주기 스캔: {orchestrator.periodicScan.active ? `${orchestrator.periodicScan.intervalMin}분 주기` : '비활성'}
+              </span>
+              {orchestrator.periodicScan.lastScanAt && (
+                <span className="text-[10px] text-slate-600 ml-auto">
+                  마지막: {formatDate(orchestrator.periodicScan.lastScanAt)}
+                  {orchestrator.periodicScan.lastScanStats && ` (${orchestrator.periodicScan.lastScanStats.enqueued}건 등록)`}
+                </span>
+              )}
+            </div>
+          )}
         </GlassCard>
       </div>
 

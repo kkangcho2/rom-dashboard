@@ -252,7 +252,7 @@ module.exports = function (db) {
       const {
         default_match_threshold, default_review_threshold,
         default_retry_attempts, polling_interval_sec,
-        auto_email_globally_enabled,
+        auto_email_globally_enabled, scan_interval_min,
         game_keywords_json, sponsor_keywords_json, custom_weights_json
       } = req.body;
 
@@ -263,6 +263,7 @@ module.exports = function (db) {
           default_retry_attempts = COALESCE(?, default_retry_attempts),
           polling_interval_sec = COALESCE(?, polling_interval_sec),
           auto_email_globally_enabled = COALESCE(?, auto_email_globally_enabled),
+          scan_interval_min = COALESCE(?, scan_interval_min),
           game_keywords_json = COALESCE(?, game_keywords_json),
           sponsor_keywords_json = COALESCE(?, sponsor_keywords_json),
           custom_weights_json = COALESCE(?, custom_weights_json),
@@ -274,11 +275,22 @@ module.exports = function (db) {
         default_retry_attempts ?? null,
         polling_interval_sec ?? null,
         auto_email_globally_enabled ?? null,
+        scan_interval_min ?? null,
         game_keywords_json ?? null,
         sponsor_keywords_json ?? null,
         custom_weights_json ?? null,
       );
       res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 수동 즉시 스캔 (모든 LIVE 캠페인)
+  router.post('/scan-now', (req, res) => {
+    try {
+      const stats = orchestrator.triggerScanNow();
+      res.json({ ok: true, stats });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
