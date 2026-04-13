@@ -49,6 +49,11 @@ export const getSettings = () => fetchJson('/settings');
 export const updateSettings = (body) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(body) });
 export const triggerScanNow = () => post('/scan-now');
 
+// ─── System Health ────────────────────────────────────────────
+export const getHealth = () => fetchJson('/health');
+export const runHealthCheckNow = () => post('/health/check-now');
+export const getHealthHistory = (checkName) => fetchJson(`/health/${checkName}`);
+
 // ─── Review Queue ───────────────────────────────────────────
 export const getReviewQueue = (params = {}) => {
   const q = new URLSearchParams(params).toString();

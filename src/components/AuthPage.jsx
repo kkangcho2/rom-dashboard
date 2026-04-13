@@ -26,6 +26,7 @@ export default function AuthPage() {
 
   // returnUrl 파라미터 (로그인 후 원래 페이지로 복귀)
   const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') || '/';
+  const wasExpired = new URLSearchParams(window.location.search).get('expired') === '1';
 
   // 이미 로그인된 경우 리다이렉트
   if (user) {
@@ -211,6 +212,13 @@ export default function AuthPage() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {/* 세션 만료 안내 */}
+            {wasExpired && !formError && (
+              <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                세션이 만료되었습니다. 다시 로그인해주세요.
+              </p>
             )}
 
             {/* 에러/성공 메시지 */}

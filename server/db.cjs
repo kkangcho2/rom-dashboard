@@ -605,6 +605,22 @@ try {
 // Periodic scan interval (min). default 60min
 try { db.prepare("ALTER TABLE system_settings ADD COLUMN scan_interval_min INTEGER DEFAULT 60").run(); } catch {}
 
+// System health check history
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_health (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      check_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      latency_ms INTEGER DEFAULT 0,
+      message TEXT,
+      checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_health_check_name ON system_health(check_name, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_health_checked_at ON system_health(checked_at);
+  `);
+} catch (e) { console.error('[DB] system_health init failed:', e.message); }
+
 // delivery_reports — 신규 파이프라인용 컬럼 확장
 try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN campaign_creator_id TEXT").run(); } catch {}
 try { db.prepare("ALTER TABLE delivery_reports ADD COLUMN video_id INTEGER").run(); } catch {}

@@ -22,6 +22,10 @@ try { StreamMonitor = require('./stream-monitor.cjs'); } catch {}
 let Matcher = null;
 try { Matcher = require('./campaign-broadcast-matcher.cjs'); } catch {}
 
+// Health check (lazy)
+let HealthCheck = null;
+try { HealthCheck = require('./health-check.cjs'); } catch {}
+
 // ─── Job Handlers ───────────────────────────────────────────────
 
 /**
@@ -249,6 +253,16 @@ function start() {
 
   worker = jobQueue.startWorker(JOB_HANDLERS, 'campaign-orchestrator');
   startPeriodicScan();
+
+  // 헬스 체크 스케줄러
+  if (HealthCheck) {
+    let intervalMin = 30;
+    try {
+      const row = db.prepare('SELECT scan_interval_min FROM system_settings WHERE id = 1').get();
+      // 헬스체크는 scan보다 짧은 주기로. 기본 30분
+    } catch {}
+    HealthCheck.start(intervalMin);
+  }
 }
 
 /**

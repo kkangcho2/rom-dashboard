@@ -4,10 +4,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Activity, AlertTriangle, CheckCircle2, Clock, Mail, MailX,
-  Monitor, FileText, Megaphone, Eye, RefreshCw, Zap, Server
+  Monitor, FileText, Megaphone, Eye, RefreshCw, Zap, Server, Heart, XCircle
 } from 'lucide-react';
 import { GlassCard } from '../../components/shared';
-import { getDashboard } from '../../services/admin-automation-api';
+import { getDashboard, getHealth, runHealthCheckNow } from '../../services/admin-automation-api';
+
+const HEALTH_LABELS = {
+  ai_api: 'AI API',
+  yt_video_info: 'YouTube 영상',
+  yt_transcript: 'YouTube 자막',
+  chzzk: 'Chzzk',
+  afreeca: 'AfreecaTV',
+  database: 'DB',
+  orchestrator: '오케스트레이터',
+  job_rate: '잡 실패율',
+};
 
 const JOB_TYPE_LABELS = {
   monitor_campaign: '캠페인 모니터',
@@ -31,6 +42,8 @@ const STATE_COLORS = {
 export default function AdminDashboardPage({ onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [health, setHealth] = useState(null);
+  const [healthRunning, setHealthRunning] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -38,9 +51,19 @@ export default function AdminDashboardPage({ onNavigate }) {
       .then(r => setData(r.data))
       .catch(err => console.error('Dashboard load error:', err))
       .finally(() => setLoading(false));
+    getHealth().then(r => setHealth(r)).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleHealthCheckNow = async () => {
+    setHealthRunning(true);
+    try {
+      const r = await runHealthCheckNow();
+      setHealth(r);
+    } catch (e) { console.error(e); }
+    setHealthRunning(false);
+  };
 
   if (loading && !data) {
     return <div className="p-6 text-center text-slate-500 text-xs animate-pulse">운영 현황 로딩 중...</div>;
@@ -307,6 +330,51 @@ export default function AdminDashboardPage({ onNavigate }) {
           </button>
         </GlassCard>
       </div>
+
+      {/* System Health (AI API / Transcript / Chzzk / AfreecaTV / DB / Orchestrator) */}
+      {health && Array.isArray(health.results) && (
+        <GlassCard className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Heart size={14} className="text-red-400" /> 시스템 헬스 체크
+              <span className="text-[10px] text-slate-500 font-normal">
+                ({health.lastRunAt ? `최근: ${formatDate(health.lastRunAt)}` : '미실행'})
+              </span>
+            </h3>
+            <button
+              onClick={handleHealthCheckNow}
+              disabled={healthRunning}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-cyan-400 hover:bg-cyan-500/10 border border-cyan-500/20 transition disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={healthRunning ? 'animate-spin' : ''} />
+              {healthRunning ? '체크 중...' : '즉시 체크'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {health.results.map(r => {
+              const colors = {
+                ok: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400',
+                degraded: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
+                fail: 'bg-red-500/10 border-red-500/30 text-red-400',
+              };
+              const icon = r.status === 'ok' ? <CheckCircle2 size={12}/> :
+                           r.status === 'degraded' ? <AlertTriangle size={12}/> :
+                           <XCircle size={12}/>;
+              return (
+                <div key={r.check} className={`p-3 rounded-lg border ${colors[r.status] || colors.fail}`}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {icon}
+                    <span className="text-xs font-bold">{HEALTH_LABELS[r.check] || r.check}</span>
+                    <span className="text-[9px] ml-auto opacity-60">{r.latency || 0}ms</span>
+                  </div>
+                  <div className="text-[10px] opacity-80 line-clamp-2">{r.message || '-'}</div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      )}
 
       {/* 데이터 테이블 현황 */}
       {tableCounts && (

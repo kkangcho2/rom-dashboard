@@ -308,6 +308,40 @@ module.exports = function (db) {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  //  System Health
+  // ═══════════════════════════════════════════════════════════════
+
+  router.get('/health', (req, res) => {
+    try {
+      const HealthCheck = require('../services/health-check.cjs');
+      const snapshot = HealthCheck.getSnapshot();
+      res.json({ ok: true, ...snapshot });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.post('/health/check-now', async (req, res) => {
+    try {
+      const HealthCheck = require('../services/health-check.cjs');
+      const snapshot = await HealthCheck.runAllChecks();
+      res.json({ ok: true, ...snapshot });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/health/:checkName', (req, res) => {
+    try {
+      const HealthCheck = require('../services/health-check.cjs');
+      const rows = HealthCheck.getRecent(req.params.checkName, 50);
+      res.json({ ok: true, history: rows });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // 수동 즉시 스캔 (모든 LIVE 캠페인)
   router.post('/scan-now', (req, res) => {
     try {

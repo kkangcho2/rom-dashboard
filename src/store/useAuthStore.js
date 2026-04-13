@@ -235,6 +235,15 @@ export async function authFetch(path, options = {}) {
       const newToken = useAuthStore.getState().accessToken;
       headers['Authorization'] = `Bearer ${newToken}`;
       res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    } else {
+      // refresh 실패 → 자동 로그아웃 + 로그인 화면 이동 (브라우저 환경)
+      try {
+        useAuthStore.getState()._clearAuth?.();
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          const returnUrl = encodeURIComponent(window.location.pathname + window.location.search);
+          window.location.href = `/login?returnUrl=${returnUrl}&expired=1`;
+        }
+      } catch {}
     }
   }
 
